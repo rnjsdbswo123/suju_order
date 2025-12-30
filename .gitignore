@@ -1,0 +1,17 @@
+# .gitignore 파일 내용
+
+# 1. 데이터베이스 (절대 올리면 안 됨! 고객정보 유출)
+db.sqlite3
+db.sqlite3-journal
+
+# 2. 가상환경 (내 PC 설정이라 올릴 필요 없음)
+venv/
+env/
+.env
+
+# 3. 파이썬 임시 파일들
+__pycache__/
+*.py[cod]
+.DS_Store
+
+*.tar

@@ -1,0 +1,294 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+    /* 테이블 상태별 배경색 스타일 */
+    .table-green { background-color: #d1e7dd !important; --bs-table-bg: #d1e7dd !important; }
+    .table-green:hover { background-color: #badbcc !important; --bs-table-bg: #badbcc !important; }
+    .table-red { background-color: #ffe5d0 !important; --bs-table-bg: #ffe5d0 !important; }
+    .table-red:hover { background-color: #ffd6b3 !important; --bs-table-bg: #ffd6b3 !important; }
+    
+    /* 탭 스타일 */
+    .nav-pills .nav-link.active { background-color: #0d6efd; }
+    .nav-pills .nav-link { color: #495057; background-color: #fff; border: 1px solid #dee2e6; margin-right: 5px; }
+    
+    /* 검색창 스타일 */
+    .search-input { width: 250px; }
+</style>
+
+<div style="display:none;"><form id="csrf-form">{% csrf_token %}</form></div>
+
+<div class="container-fluid mt-4">
+    
+    <div class="bg-white shadow-sm rounded border mb-4">
+        <div class="d-flex justify-content-between align-items-center p-4 border-bottom">
+            <div class="d-flex align-items-center gap-2">
+                <span style="font-size: 2rem;">🏭</span>
+                <div>
+                    <h2 class="fw-bold m-0 text-dark">생산 현황판</h2>
+                    <small class="text-muted">실시간 주문 및 작업 현황</small>
+                </div>
+            </div>
+
+            <div class="d-flex align-items-center gap-2">
+                <a href="/orders/new/" class="btn btn-primary fw-bold shadow-sm">+ 신규 발주 등록</a>
+                <a href="/orders/my-list/" class="btn btn-outline-secondary fw-bold">📋 내 발주 보기</a>
+                
+                <div class="vr mx-2"></div> 
+                <form action="{% url 'logout' %}" method="post">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger text-nowrap">로그아웃</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center px-4 py-2 bg-light rounded-bottom">
+            <div class="d-flex align-items-center gap-2">
+                <span class="small fw-bold text-muted me-2">📌 상태 안내:</span>
+                <span class="badge bg-white text-dark border">⬜ 대기</span>
+                <span class="badge text-dark border" style="background-color: #d1e7dd;">🟩 정상 완료</span>
+                <span class="badge text-dark border" style="background-color: #ffe5d0;">🟧 수량 불일치</span>
+            </div>
+            <div>
+                <button class="btn btn-success btn-sm fw-bold shadow-sm" onclick="completeBulk()">
+                    ✅ 체크된 항목 일괄 완료
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <ul class="nav nav-pills mb-3">
+        <li class="nav-item">
+            <a class="nav-link {% if selected_facility == 'ALL' %}active{% endif %}" href="?date={{ selected_date }}&facility=ALL&q={{ search_query }}">전체 공장</a>
+        </li>
+        {% for fac in facility_list %}
+        <li class="nav-item">
+            <a class="nav-link {% if selected_facility == fac %}active{% endif %}" href="?date={{ selected_date }}&facility={{ fac }}&q={{ search_query }}">{{ fac }}</a>
+        </li>
+        {% endfor %}
+    </ul>
+
+    <div class="card mb-4 border-0 shadow-sm bg-light">
+        <div class="card-body py-3">
+            <form method="get" action="." class="row g-2 align-items-center">
+                <input type="hidden" name="facility" value="{{ selected_facility }}">
+                
+                <div class="col-auto"><label class="fw-bold">📅 납기일:</label></div>
+                <div class="col-auto">
+                    <input type="date" name="date" class="form-control" value="{% if selected_date != 'ALL' %}{{ selected_date }}{% endif %}">
+                </div>
+                
+                <div class="col-auto ms-3"><label class="fw-bold">🔍 통합 검색:</label></div>
+                <div class="col-auto">
+                    <input type="text" name="q" class="form-control search-input" 
+                           placeholder="거래처명 또는 ID(admin) 검색" 
+                           value="{{ search_query }}">
+                </div>
+
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-primary">조회</button>
+                    <a href="?facility=ALL" class="btn btn-outline-secondary">초기화</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light text-center">
+                    <tr>
+                        <th style="width: 50px;">선택</th>
+                        <th>품목명 (SKU)</th>
+                        <th>총 작업 건수</th>
+                        <th>총 요청 수량</th>
+                        <th style="width: 100px;">상세보기</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for group in grouped_lines %}
+                    <tr class="{% if group.group_status == 'PERFECT' %}table-green{% elif group.group_status == 'IMPERFECT' %}table-red{% else %}table-secondary{% endif %}">
+                        <td class="text-center">
+                            <input type="checkbox" class="form-check-input group-check" onchange="toggleGroupChecks(this, 'group-{{ group.product.id }}')">
+                        </td>
+                        <td>
+                            <span class="fw-bold fs-5">{{ group.product.name }}</span><br>
+                            <small class="text-muted">{{ group.product.sku }}</small>
+                            {% if group.group_status == 'PERFECT' %}
+                                <span class="badge bg-success ms-1">완료 (정상)</span>
+                            {% elif group.group_status == 'IMPERFECT' %}
+                                <span class="badge bg-danger ms-1">완료 (수량차이)</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center fw-bold">{{ group.lines|length }}건</td>
+                        <td class="text-center fw-bold text-primary fs-5">{{ group.total_qty }}개</td>
+                        <td class="text-center">
+                            <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ group.product.id }}">
+                                ▼ 펼치기
+                            </button>
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td colspan="5" class="p-0 border-0">
+                            <div class="collapse show" id="collapse-{{ group.product.id }}">
+                                <div class="bg-white p-3 border-bottom">
+                                    <table class="table table-sm table-bordered mb-0 align-middle text-center" style="table-layout: fixed;"> 
+                                        <thead class="bg-light">
+                                            <tr>
+                                                <th style="width: 50px;">✓</th>
+                                                <th style="width: 120px;">납기일</th>
+                                                <th>거래처</th> 
+                                                <th style="width: 120px;">요청자(ID)</th> 
+                                                <th>메모</th>
+                                                <th style="width: 100px;">생산동</th>
+                                                <th style="width: 160px;">완료수량 / 요청</th>
+                                                <th style="width: 140px;">작업</th> 
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for line in group.lines %}
+                                            <tr class="group-{{ group.product.id }} {% if line.status == 'COMPLETED' %}{% if line.fulfilled_quantity == line.requested_quantity %}table-green{% else %}table-red{% endif %} text-muted{% endif %}">
+                                                <td>
+                                                    <input type="checkbox" class="form-check-input line-check" value="{{ line.id }}" {% if line.status == 'COMPLETED' %}disabled{% endif %}>
+                                                </td>
+                                                
+                                                <td>{{ line.header.requested_delivery_date|date:"Y-m-d" }}</td>
+                                                <td class="text-truncate" title="{{ line.header.customer.name }}">{{ line.header.customer.name }}</td>
+
+                                                <td class="fw-bold text-primary">
+                                                    {{ line.header.created_by.username|default:"-" }}
+                                                </td>
+
+                                                <td class="text-start small text-muted text-truncate" title="{{ line.header.memo|default:'-' }}">{{ line.header.memo|default:"-" }}</td>
+                                                <td><span class="badge bg-info text-dark">{{ line.production_facility }}</span></td>
+                                                
+                                                <td>
+                                                    <div class="input-group input-group-sm">
+                                                        <input type="number" id="qty-{{ line.id }}" 
+                                                            class="form-control text-end fw-bold {% if line.status == 'COMPLETED' %}{% if line.fulfilled_quantity == line.requested_quantity %}text-success{% else %}text-danger{% endif %}{% else %}text-success{% endif %}" 
+                                                            value="{{ line.fulfilled_quantity|default:0 }}" min="0" 
+                                                            {% if line.status == 'COMPLETED' %}disabled{% endif %}>
+                                                        <span class="input-group-text">/ {{ line.requested_quantity }}</span>
+                                                    </div>
+                                                </td>
+                                                
+                                                <td>
+                                                    <div class="d-flex justify-content-center align-items-center gap-1">
+                                                        {% if line.status == 'COMPLETED' %}
+                                                            <span class="badge bg-secondary">완료됨</span>
+                                                            <button class="btn btn-sm btn-outline-primary" onclick="openEditModal({{ line.id }}, {{ line.fulfilled_quantity }}, '{{ line.header.memo|default:''|escapejs }}', '{{ line.production_facility }}')">✏️</button>
+                                                        {% else %}
+                                                            <button class="btn btn-sm btn-outline-success w-100" onclick="completeLine({{ line.id }})">OK</button>
+                                                        {% endif %}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="text-center py-5 text-muted">검색된 데이터가 없습니다.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-light">
+                <h5 class="modal-title fw-bold">✏️ 수정 및 이력</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-line-id">
+                <div class="p-3 mb-3 bg-white border rounded">
+                    <h6 class="fw-bold border-bottom pb-2 mb-3">🛠️ 내용 수정</h6>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small text-muted">완료 수량</label>
+                            <input type="number" class="form-control fw-bold text-primary" id="edit-qty" min="0">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small text-muted">생산동 이동</label>
+                            <select class="form-select" id="edit-facility">
+                                {% for fac in facility_list %}
+                                    <option value="{{ fac }}">{{ fac }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label small text-muted">메모</label>
+                        <textarea class="form-control" id="edit-memo" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="p-3 bg-light border rounded">
+                    <h6 class="fw-bold border-bottom pb-2 mb-2">📋 변경 이력</h6>
+                    <ul class="list-group list-group-flush small" id="log-list" style="max-height: 150px; overflow-y: auto;"></ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>
+                <button type="button" class="btn btn-primary" onclick="submitEdit()">저장하기</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+    function getCsrfToken() { const tokenInput = document.querySelector('[name=csrfmiddlewaretoken]'); return tokenInput ? tokenInput.value : ''; }
+    function toggleGroupChecks(source, groupClass) { document.querySelectorAll('.' + groupClass + ' .line-check:not([disabled])').forEach(cb => cb.checked = source.checked); }
+    
+    async function completeLine(lineId) {
+        const qty = document.getElementById('qty-' + lineId).value;
+        if (!confirm(`수량 ${qty}개로 완료하시겠습니까?`)) return;
+        try { await axios.post(`/api/production/line/${lineId}/complete/`, { quantity: qty }, { headers: { 'X-CSRFToken': getCsrfToken() } }); location.reload(); } catch (err) { alert("오류 발생"); }
+    }
+    
+    async function completeBulk() {
+        const ids = Array.from(document.querySelectorAll('.line-check:checked')).map(cb => parseInt(cb.value));
+        if (ids.length === 0 || !confirm(`${ids.length}건 일괄 완료하시겠습니까?`)) return;
+        try { await axios.post('/api/production/lines/bulk_complete/', { ids: ids }, { headers: { 'X-CSRFToken': getCsrfToken() } }); location.reload(); } catch (err) { alert("오류 발생"); }
+    }
+
+    const editModal = new bootstrap.Modal(document.getElementById('editModal'));
+
+    async function openEditModal(lineId, currentQty, currentMemo, currentFacility) {
+        document.getElementById('edit-line-id').value = lineId;
+        document.getElementById('edit-qty').value = currentQty;
+        document.getElementById('edit-memo').value = currentMemo;
+        document.getElementById('edit-facility').value = currentFacility;
+        editModal.show();
+        
+        const logList = document.getElementById('log-list');
+        logList.innerHTML = '<li class="list-group-item bg-transparent text-center text-muted">로딩중...</li>';
+        
+        try {
+            const res = await axios.get(`/api/production/line/${lineId}/logs/`);
+            if (res.data.length === 0) logList.innerHTML = '<li class="list-group-item text-center text-muted">이력 없음</li>';
+            else logList.innerHTML = res.data.map(log => `<li class="list-group-item bg-transparent px-0 py-2"><strong>${log.change_type}</strong> <span class="text-muted small">${log.created_at_fmt}</span><br>${log.description}</li>`).join('');
+        } catch (err) { logList.innerHTML = '<li class="text-danger text-center">조회 실패</li>'; }
+    }
+
+    async function submitEdit() {
+        if (!confirm("저장하시겠습니까?")) return;
+        try { 
+            await axios.post(`/api/production/line/${document.getElementById('edit-line-id').value}/update/`, 
+                { fulfilled_quantity: document.getElementById('edit-qty').value, memo: document.getElementById('edit-memo').value, production_facility: document.getElementById('edit-facility').value }, 
+                { headers: { 'X-CSRFToken': getCsrfToken() } }
+            ); 
+            location.reload(); 
+        } catch (err) { alert("오류 발생"); }
+    }
+</script>
+{% endblock %}

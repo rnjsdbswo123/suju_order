@@ -1,0 +1,157 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <h4 class="mb-3">🏭 생산 현황 (수주창)</h4>
+
+        <div class="card mb-3 shadow-sm">
+            <div class="card-body row g-2">
+                <div class="col-6">
+                    <label class="form-label small fw-bold">납기일</label>
+                    <input type="date" id="search-date" class="form-control" onchange="loadSummary()">
+                </div>
+                <div class="col-6">
+                    <label class="form-label small fw-bold">생산동</label>
+                    <select id="search-facility" class="form-select" onchange="loadSummary()">
+                        <option value="">전체보기</option>
+                        <option value="A동">A동</option>
+                        <option value="B동">B동</option>
+                        <option value="C동">C동</option>
+                        <option value="외부가공">외부가공</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div id="summary-container">
+            </div>
+    </div>
+</div>
+
+<div class="modal fade" id="detailModal" tabindex="-1">
+    <div class="modal-dialog modal-fullscreen-sm-down">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modal-product-name">품목 상세</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0" id="detail-container">
+                </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // 오늘 날짜로 기본 설정
+    document.getElementById('search-date').value = new Date().toISOString().split('T')[0];
+
+    // 1. 품목별 요약 정보 가져오기
+    async function loadSummary() {
+        const date = document.getElementById('search-date').value;
+        const facility = document.getElementById('search-facility').value; // 생산동 값 가져오기
+        const container = document.getElementById('summary-container');        
+        try {
+            
+            const res = await axios.get(`/api/production/summary/?date=${date}&facility=${facility}`);
+            const data = res.data;
+
+            if (data.length === 0) {
+                container.innerHTML = '<p class="text-center mt-5 text-muted">해당 날짜에 주문이 없습니다.</p>';
+                return;
+            }
+
+            container.innerHTML = data.map(item => `
+                <div class="card mb-2 shadow-sm" onclick="showDetail(${item.product__id}, '${item.product__name}')">
+                    <div class="card-body d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-0">${item.product__name}</h6>
+                            <small class="text-muted">완료 현황: ${item.total_fulfilled} / ${item.total_requested}</small>
+                        </div>
+                        <span class="badge bg-primary rounded-pill">상세보기</span>
+                    </div>
+                </div>
+            `).join('');
+        } catch (e) { alert("데이터 로딩 실패"); }
+    }
+
+    // 2. 특정 품목의 거래처별 상세 내역 보기 (수정된 로직)
+    async function showDetail(productId, productName) {
+        document.getElementById('modal-product-name').innerText = productName;
+        const container = document.getElementById('detail-container');
+        const date = document.getElementById('search-date').value;
+
+        try {
+            const res = await axios.get(`/api/production/detail/?date=${date}&product_id=${productId}`);
+            const details = res.data;
+
+            container.innerHTML = `
+                <table class="table align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>거래처(발주자)</th>
+                            <th>요청/완료</th>
+                            <th style="width: 100px">수량입력</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${details.map(item => `
+                            <tr>
+                                <td>
+                                    <div class="fw-bold">${item.customer_name}</div>
+                                    <small class="text-muted">${item.created_by} | ${item.facility || '미지정'}</small>
+                                </td>
+                                <td>
+                                    <span class="badge ${item.status === '완료' ? 'bg-success' : 'bg-warning'}">${item.status}</span><br>
+                                    ${item.fulfilled_qty} / ${item.requested_qty}
+                                </td>
+                                <td>
+                                    <div class="input-group input-group-sm">
+                                        <input type="number" class="form-control fulfill-input" 
+                                            data-id="${item.line_id}" 
+                                            placeholder="수량">
+                                        <button class="btn btn-outline-primary" onclick="completeLine(${item.line_id}, this)">🆗</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+                <div class="p-3">
+                    <button class="btn btn-success w-100" onclick="completeAll()">선택 항목 일괄 완료 처리</button>
+                </div>
+            `;
+            
+            const modal = new bootstrap.Modal(document.getElementById('detailModal'));
+            modal.show();
+        } catch (e) { alert("상세 내역을 불러오지 못했습니다."); }
+    }
+
+    // 개별 완료 처리 함수
+    async function completeLine(lineId, btnElement) {
+        const input = btnElement.previousElementSibling;
+        const qty = parseInt(input.value);
+
+        if (!qty || qty <= 0) return alert("완료 수량을 입력하세요.");
+
+        try {
+            await axios.patch(`/api/production/line/${lineId}/complete/`, {
+                fulfilled_quantity: qty
+            }, { headers: { 'X-CSRFToken': '{{ csrf_token }}' } });
+            
+            alert("처리가 완료되었습니다.");
+            // 모달 닫고 목록 새로고침
+            bootstrap.Modal.getInstance(document.getElementById('detailModal')).hide();
+            loadSummary();
+        } catch (e) { alert("처리 실패: " + e.response.data.error); }
+    }
+
+    window.onload = loadSummary;
+
+
+    
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+{% endblock %}

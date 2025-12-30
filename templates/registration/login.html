@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-center align-items-center" style="height: 80vh;">
+    <div class="card shadow" style="width: 400px;">
+        <div class="card-header bg-primary text-white text-center">
+            <h4 class="m-0 fw-bold">🔒 시스템 로그인</h4>
+        </div>
+        <div class="card-body p-4">
+            <form method="post">
+                {% csrf_token %}
+                <div class="mb-3">
+                    <label class="form-label fw-bold">아이디</label>
+                    <input type="text" name="username" class="form-control" autofocus required>
+                </div>
+                <div class="mb-4">
+                    <label class="form-label fw-bold">비밀번호</label>
+                    <input type="password" name="password" class="form-control" required>
+                </div>
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-primary btn-lg">로그인</button>
+                </div>
+            </form>
+        </div>
+        <div class="card-footer text-center text-muted small">
+            무단 접속을 금지합니다.
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row justify-content-center mt-5">
+    <div class="col-md-6 col-lg-4">
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-4">
+                <h4 class="text-center mb-4 fw-bold">📦 시스템 로그인</h4>
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label">아이디</label>
+                        <input type="text" name="username" class="form-control form-control-lg" required>
+                    </div>
+                    <div class="mb-4">
+                        <label class="form-label">비밀번호</label>
+                        <input type="password" name="password" class="form-control form-control-lg" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-lg w-100">로그인</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

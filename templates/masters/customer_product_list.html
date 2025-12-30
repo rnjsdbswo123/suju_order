@@ -1,0 +1,156 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<style>
+    /* 디자인: 검색창 높이 조절 */
+    .select2-container--bootstrap-5 .select2-selection {
+        min-height: 38px;
+        padding-top: 4px;
+        border: 1px solid #ced4da;
+    }
+    /* 검색 결과 글자 스타일 */
+    .select2-results__option {
+        font-size: 0.95rem;
+        padding: 8px 12px;
+    }
+</style>
+
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="fw-bold">🔗 거래처-품목 매핑 관리</h2>
+        <a href="/masters/upload/" class="btn btn-outline-success">📂 엑셀로 일괄 올리기</a>
+    </div>
+
+    <div class="card shadow-sm mb-5">
+        <div class="card-header bg-light py-3">
+            <h5 class="mb-0 fw-bold">➕ 매핑 직접 추가</h5>
+        </div>
+        <div class="card-body">
+            <form method="post" class="row g-3 align-items-end">
+                {% csrf_token %}
+                
+                <div class="col-md-5">
+                    <label class="form-label fw-bold">거래처 검색</label>
+                    <select name="customer" class="form-select select2-customer" required>
+                        <option value="">거래처명 입력 (1글자 이상)...</option>
+                    </select>
+                </div>
+                
+                <div class="col-md-5">
+                    <label class="form-label fw-bold">품목 검색</label>
+                    <select name="product" class="form-select select2-product" required>
+                        <option value="">품목명 또는 코드 입력...</option>
+                    </select>
+                </div>
+                
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100 py-2 fw-bold">연결하기</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-header">
+            <h5 class="mb-0">📋 연결된 목록 ({{ mappings.count }}건)</h5>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0 text-center align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width: 30%;">거래처명</th>
+                        <th style="width: 30%;">품목명</th>
+                        <th style="width: 15%;">SKU 코드</th>
+                        <th style="width: 15%;">단가</th>
+                        <th style="width: 10%;">관리</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for m in mappings %}
+                    <tr>
+                        <td class="fw-bold">{{ m.customer.name }}</td>
+                        <td class="text-start ps-4">{{ m.product.name }}</td>
+                        <td><span class="badge bg-light text-dark border">{{ m.product.sku }}</span></td>
+                        <td>{{ m.product.unit_price }}원</td>
+                        <td>
+                            <a href="{% url 'customer-product-delete' m.pk %}" 
+                               class="btn btn-sm btn-outline-danger"
+                               onclick="return confirm('정말 [{{ m.customer.name }} - {{ m.product.name }}] 연결을 해제할까요?');">
+                                삭제
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="py-5 text-muted">
+                            <h5 class="fw-bold">아직 연결된 데이터가 없습니다.</h5>
+                            <p class="mb-0">위 검색창에서 거래처와 품목을 검색해서 연결해주세요.</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" />
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/i18n/ko.js"></script>
+
+<script>
+    $(document).ready(function() {
+        
+        // 공통 옵션: 덜컥거림 방지 설정 정의
+        const commonOptions = {
+            theme: 'bootstrap-5',
+            allowClear: true,
+            width: '100%',
+            minimumInputLength: 0, // 클릭 시 바로 목록 노출
+            language: {
+                // ★ [핵심] 검색 중일 때 아무 글자도 안 나오게 해서 리스트 밀림 방지
+                searching: function() {
+                    return ""; 
+                },
+                // 결과 없을 때 문구
+                noResults: function() {
+                    return "검색 결과가 없습니다";
+                }
+            }
+        };
+
+        // 1. 거래처 검색 (설정 적용)
+        $('.select2-customer').select2({
+            ...commonOptions, // 위에서 정의한 옵션 가져오기
+            placeholder: "거래처를 선택하거나 검색하세요",
+            ajax: {
+                url: '/api/masters/search/customers/',
+                dataType: 'json',
+                delay: 250,
+                data: function (params) { return { q: params.term }; },
+                processResults: function (data) { return { results: data.results }; },
+                cache: true
+            }
+        });
+
+        // 2. 품목 검색 (설정 적용)
+        $('.select2-product').select2({
+            ...commonOptions, // 위에서 정의한 옵션 가져오기
+            placeholder: "품목을 선택하거나 검색하세요",
+            ajax: {
+                url: '/api/masters/search/products/',
+                dataType: 'json',
+                delay: 250,
+                data: function (params) { return { q: params.term }; },
+                processResults: function (data) { return { results: data.results }; },
+                cache: true
+            }
+        });
+    });
+</script>
+{% endblock %}
