@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2 class="mb-4">{{ page_title }}</h2>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="card">
+        <div class="card-body">
+            <p class="card-text mb-4">
+                자주 주문하는 품목을 '선호 품목'으로 추가해두면, 영업 발주 화면에서 편리하게 모아볼 수 있습니다.
+            </p>
+
+            <!-- 검색창 추가 -->
+            <div class="mb-3">
+                <input type="text" id="product-search" class="form-control" placeholder="품목명으로 검색...">
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-striped table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col">품목명</th>
+                            <th scope="col" class="text-center">관리</th>
+                        </tr>
+                    </thead>
+                    <tbody id="product-table-body">
+                        {% for product in products %}
+                        <tr class="product-row">
+                            <td class="product-name">{{ product.name }}</td>
+                            <td class="text-center">
+                                {% if product.id in favorite_product_ids %}
+                                    <form action="{% url 'sales-favorite-manage' %}" method="post" class="d-inline">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="product_id" value="{{ product.id }}">
+                                        <input type="hidden" name="action" value="remove">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                            <i class="fas fa-star"></i> 제거
+                                        </button>
+                                    </form>
+                                {% else %}
+                                    <form action="{% url 'sales-favorite-manage' %}" method="post" class="d-inline">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="product_id" value="{{ product.id }}">
+                                        <input type="hidden" name="action" value="add">
+                                        <button type="submit" class="btn btn-sm btn-primary">
+                                            <i class="far fa-star"></i> 추가
+                                        </button>
+                                    </form>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="2" class="text-center">등록된 품목이 없습니다.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('product-search');
+    const tableBody = document.getElementById('product-table-body');
+    const rows = tableBody.getElementsByClassName('product-row');
+
+    searchInput.addEventListener('keyup', function(event) {
+        const searchTerm = event.target.value.toLowerCase();
+
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const name = row.querySelector('.product-name').textContent.toLowerCase();
+            
+            if (name.includes(searchTerm)) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        }
+    });
+});
+</script>
+{% endblock %}

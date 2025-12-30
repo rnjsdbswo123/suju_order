@@ -1,4 +1,5 @@
 # masters/models.py
+from django.conf import settings
 from django.db import models
 
 # 1. 거래처 (Customer) 모델
@@ -34,3 +35,20 @@ class CustomerProductMap(models.Model):
         
     def __str__(self):
         return f"{self.customer.name} -> {self.product.name}"
+
+# 4. 영업사원 선호 품목 (SalesFavoriteProduct) 모델
+class SalesFavoriteProduct(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='favorite_products')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'product')
+        verbose_name = '영업사원 선호 품목'
+        verbose_name_plural = '영업사원 선호 품목들'
+
+    def __str__(self):
+        try:
+            return f'{self.user.username} - {self.product.name}'
+        except Exception:
+            return f'Unknown User - {self.product.name}'

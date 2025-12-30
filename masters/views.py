@@ -1,5 +1,6 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.generic import TemplateView
+from django.views import View
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib import messages
 from rest_framework.decorators import api_view
@@ -8,7 +9,7 @@ from django.db.models import Q  # ★ [중요] 검색 기능의 핵심!
 import openpyxl
 
 # 모델 가져오기
-from .models import Customer, Product, CustomerProductMap
+from .models import Customer, Product, CustomerProductMap, SalesFavoriteProduct
 
 # ==========================================
 # 1. [화면] 엑셀 데이터 일괄 업로드
@@ -153,3 +154,49 @@ def search_products(request):
         for p in products
     ]
     return Response({"results": data})
+
+
+# ==========================================
+# 4. [화면] 영업사원 선호품목 관리
+# ==========================================
+class SalesFavoriteProductManageView(LoginRequiredMixin, View):
+    template_name = 'masters/sales_favorite_product_manage.html'
+
+    def get(self, request, *args, **kwargs):
+        # 모든 활성 품목 가져오기
+        all_products = Product.objects.filter(is_active=True).order_by('name')
+        
+        # 현재 사용자의 선호 품목 ID 목록 가져오기
+        favorite_product_ids = SalesFavoriteProduct.objects.filter(user=request.user).values_list('product_id', flat=True)
+        
+        context = {
+            'products': all_products,
+            'favorite_product_ids': set(favorite_product_ids),
+            'page_title': '내 선호품목 관리'
+        }
+        return render(request, self.template_name, context)
+
+    def post(self, request, *args, **kwargs):
+        product_id = request.POST.get('product_id')
+        action = request.POST.get('action')
+
+        if not product_id or not action:
+            messages.error(request, '잘못된 요청입니다.')
+            return redirect('sales-favorite-manage')
+
+        product = get_object_or_404(Product, id=product_id)
+        
+        if action == 'add':
+            # 이미 존재하지 않으면 추가
+            if not SalesFavoriteProduct.objects.filter(user=request.user, product=product).exists():
+                SalesFavoriteProduct.objects.create(user=request.user, product=product)
+                messages.success(request, f'"{product.name}"을(를) 선호 품목에 추가했습니다.')
+        
+        elif action == 'remove':
+            # 찾아서 삭제
+            favorite = SalesFavoriteProduct.objects.filter(user=request.user, product=product)
+            if favorite.exists():
+                favorite.delete()
+                messages.success(request, f'"{product.name}"을(를) 선호 품목에서 제거했습니다.')
+
+        return redirect('sales-favorite-manage')

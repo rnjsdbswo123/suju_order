@@ -155,8 +155,8 @@ REST_FRAMEWORK = {
     'DATE_FORMAT': "%Y-%m-%d",
 }
 
-# 로그인 성공 시 이동할 페이지 (발주 등록 화면)
-LOGIN_REDIRECT_URL = '/api/production/status/'
+# 로그인 성공 시 이동할 페이지 (역할 기반 리디렉션 뷰)
+LOGIN_REDIRECT_URL = '/users/redirect-on-login/'
 
 # 2. 로그아웃 시 이동할 주소 (다시 로그인 창으로)
 LOGOUT_REDIRECT_URL = '/accounts/login/'

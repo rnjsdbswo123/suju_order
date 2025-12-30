@@ -1,5 +1,11 @@
 from django.urls import path
-from .views import OrderFormView, OrderCreateView, my_order_list_api, MyOrderListView
+from .views import (
+    OrderFormView, 
+    OrderCreateView, 
+    my_order_list_api, 
+    MyOrderListView,
+    SalesOrderCreateView
+)
 
 urlpatterns = [
     # 1. 발주 작성 화면
@@ -13,4 +19,7 @@ urlpatterns = [
 
     # 4. [보조] 내 발주 데이터만 주는 API (팝업용 - 주소 분리함)
     path('api/list/', my_order_list_api, name='my-order-list-api'),
+
+    # 5. 영업부 발주 작성 화면
+    path('sales/create/', SalesOrderCreateView.as_view(), name='sales-order-create'),
 ]

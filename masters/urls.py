@@ -4,7 +4,9 @@ from .views import (
     CustomerProductManageView, 
     delete_customer_product, 
     get_products_by_customer,
-    search_customers,search_products  # ★ 이 친구가 꼭 import 되어 있어야 합니다!
+    search_customers,
+    search_products,
+    SalesFavoriteProductManageView,
 )
 
 urlpatterns = [
@@ -21,4 +23,7 @@ urlpatterns = [
     # 4. [API] 검색 기능 (이 두 줄이 핵심입니다!)
     path('search/customers/', search_customers, name='customer-search-api'),
     path('search/products/', search_products, name='product-search-api'),
+
+    # 5. [화면] 영업사원 선호품목 관리
+    path('favorites/', SalesFavoriteProductManageView.as_view(), name='sales-favorite-manage'),
 ]

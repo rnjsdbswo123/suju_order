@@ -11,6 +11,7 @@ urlpatterns = [
     path('api/orders/', include('orders.urls')), 
     path('api/production/', include('production.urls')),
     path('api/masters/', include('masters.urls')),
+    path('users/', include('users.urls')),
     # path('api/audit/', include('audit.urls')),
 
     # [화면 경로]

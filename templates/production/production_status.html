@@ -242,9 +242,9 @@
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+{% endblock %}
 
+{% block scripts %}
 <script>
     function getCsrfToken() { const tokenInput = document.querySelector('[name=csrfmiddlewaretoken]'); return tokenInput ? tokenInput.value : ''; }
     function toggleGroupChecks(source, groupClass) { document.querySelectorAll('.' + groupClass + ' .line-check:not([disabled])').forEach(cb => cb.checked = source.checked); }
@@ -291,4 +291,4 @@
         } catch (err) { alert("오류 발생"); }
     }
 </script>
-{% endblock %}
+{% endblock scripts %}
