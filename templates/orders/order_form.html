@@ -52,14 +52,6 @@
                     <input type="date" id="delivery_date" class="form-control" required>
                     <small id="date-warning" class="text-danger fw-bold" style="display:none;">※ 15시 마감으로 모레부터 가능</small>
                 </div>
-                <div class="col-md-6">
-                    <label class="form-label fw-bold">생산 공장</label>
-                    <select id="production_facility" class="form-select">
-                        {% for fac in facility_list %}
-                            <option value="{{ fac }}">{{ fac }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
             </div>
 
             <div class="mb-4">
@@ -88,7 +80,9 @@
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/i18n/ko.js"></script>
 
 <script>
+    const IS_STAFF = {{ is_staff|yesno:"true,false" }};
     const csrftoken = getCookie('csrftoken');
+
     function getCookie(name) {
         let cookieValue = null;
         if (document.cookie && document.cookie !== '') {
@@ -125,11 +119,26 @@
 
     // 15시 체크 함수
     function checkTimeAndSetDate() {
-        const now = new Date();
-        const hour = now.getHours();
         const dateInput = document.getElementById('delivery_date');
         const warning = document.getElementById('date-warning');
 
+        if (IS_STAFF) {
+            warning.style.display = 'none';
+            // 관리자는 오늘 날짜부터 선택 가능
+            let today = new Date();
+            const yyyy = today.getFullYear();
+            const mm = String(today.getMonth() + 1).padStart(2, '0');
+            const dd = String(today.getDate()).padStart(2, '0');
+            dateInput.min = `${yyyy}-${mm}-${dd}`;
+            if (!dateInput.value) {
+                dateInput.value = `${yyyy}-${mm}-${dd}`;
+            }
+            return;
+        }
+
+        const now = new Date();
+        const hour = now.getHours();
+        
         let targetDate = new Date();
         
         // 15시(오후 3시) 이상이면 -> 모레부터 가능
@@ -167,7 +176,11 @@
             data.forEach(p => {
                 container.innerHTML += `
                     <div class="d-flex align-items-center justify-content-between mb-2 p-2 border-bottom product-item" data-id="${p.id}">
-                        <div>
+                        <div class="d-flex align-items-center">
+                            <div class="me-2">
+                                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="moveUp(this)">▲</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="moveDown(this)">▼</button>
+                            </div>
                             <span class="fw-bold" style="font-size: 1rem;">${p.name}</span> 
                         </div>
                         <div style="width: 140px;">
@@ -177,6 +190,20 @@
                 `;
             });
         });
+    }
+
+    function moveUp(btn) {
+        const row = btn.closest('.product-item');
+        if (row.previousElementSibling) {
+            row.parentNode.insertBefore(row, row.previousElementSibling);
+        }
+    }
+
+    function moveDown(btn) {
+        const row = btn.closest('.product-item');
+        if (row.nextElementSibling) {
+            row.parentNode.insertBefore(row.nextElementSibling, row);
+        }
     }
 
     document.getElementById('orderForm').addEventListener('submit', function(e) {
@@ -198,7 +225,6 @@
             body: JSON.stringify({
                 customer_id: customerId,
                 delivery_date: document.getElementById('delivery_date').value,
-                production_facility: document.getElementById('production_facility').value,
                 memo: document.getElementById('memo').value,
                 items: items
             })

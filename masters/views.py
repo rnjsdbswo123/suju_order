@@ -5,8 +5,10 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib import messages
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from django.db.models import Q  # ★ [중요] 검색 기능의 핵심!
+from django.db.models import Q
 import openpyxl
+from SujuOrderSystem.utils import FACILITY_LIST
+from django.core.paginator import Paginator
 
 # 모델 가져오기
 from .models import Customer, Product, CustomerProductMap, SalesFavoriteProduct
@@ -55,7 +57,6 @@ class DataUploadView(LoginRequiredMixin, TemplateView):
             price = row[2] if len(row) > 2 else 0
             facility = row[3] if len(row) > 3 else 'A동'
             
-            # 가격이 비어있으면 0원으로 처리
             if price is None: price = 0
             
             Product.objects.update_or_create(
@@ -74,7 +75,7 @@ class DataUploadView(LoginRequiredMixin, TemplateView):
                 product = Product.objects.get(sku=p_sku)
                 CustomerProductMap.objects.get_or_create(customer=customer, product=product)
             except:
-                pass # 매핑 실패 시 무시
+                pass
 
 # ==========================================
 # 2. [화면] 거래처-품목 매핑 직접 관리
@@ -84,7 +85,6 @@ class CustomerProductManageView(LoginRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        # 화면 로딩 시에는 전체 목록 대신 매핑된 리스트만 보여줌
         context['mappings'] = CustomerProductMap.objects.select_related('customer', 'product').order_by('-id')
         return context
 
@@ -104,57 +104,40 @@ def delete_customer_product(request, pk):
 # ==========================================
 # 3. [API] 데이터 검색 및 조회 (AJAX용)
 # ==========================================
-
-# (1) 거래처 선택 시 -> 매핑된 품목 가져오기
 @api_view(['GET'])
 def get_products_by_customer(request, customer_id):
-    mappings = CustomerProductMap.objects.filter(customer_id=customer_id).select_related('product')
+    mappings = CustomerProductMap.objects.filter(customer_id=customer_id).select_related('product').order_by('product__order', 'product__name')
     data = [{"id": m.product.id, "name": m.product.name, "sku": m.product.sku, "price": m.product.unit_price} for m in mappings]
     return Response(data)
 
-# (2) 거래처 검색 API
 @api_view(['GET'])
 def search_customers(request):
     query = request.GET.get('q', '')
-    
-    # 1. 검색어가 있으면 -> 이름이나 사업자번호로 찾기
     if query:
         customers = Customer.objects.filter(
             Q(name__icontains=query) | Q(business_id__icontains=query)
         ).filter(is_active=True)
-    # 2. 검색어가 없으면 -> (수정됨) 그냥 활성 거래처 20개 보여주기
     else:
         customers = Customer.objects.filter(is_active=True)
-
-    # 최대 20개까지만 잘라서 보냄
     customers = customers[:20]
-    
     data = [{"id": c.id, "text": c.name} for c in customers]
     return Response({"results": data})
-# (3) 품목 검색 API ★ [여기가 문제였을 수 있음]
+
 @api_view(['GET'])
 def search_products(request):
     query = request.GET.get('q', '')
-    print(f"품목 검색 요청 들어옴: 검색어='{query}'") # 터미널에서 확인용
-    
-    # 1. 검색어가 있으면 -> 이름이나 SKU로 찾기
     if query:
         products = Product.objects.filter(
             Q(name__icontains=query) | Q(sku__icontains=query)
         )
-    # 2. 검색어가 없으면 -> 그냥 최근 등록된 20개 무조건 보여주기
     else:
         products = Product.objects.all().order_by('-id')
-
-    # (혹시 몰라 is_active 필터도 뺐습니다. 무조건 나오게!)
-    products = products[:20] # 최대 20개까지만
-    
+    products = products[:20]
     data = [
         {"id": p.id, "text": f"{p.name} ({p.sku})"} 
         for p in products
     ]
     return Response({"results": data})
-
 
 # ==========================================
 # 4. [화면] 영업사원 선호품목 관리
@@ -163,12 +146,8 @@ class SalesFavoriteProductManageView(LoginRequiredMixin, View):
     template_name = 'masters/sales_favorite_product_manage.html'
 
     def get(self, request, *args, **kwargs):
-        # 모든 활성 품목 가져오기
         all_products = Product.objects.filter(is_active=True).order_by('name')
-        
-        # 현재 사용자의 선호 품목 ID 목록 가져오기
         favorite_product_ids = SalesFavoriteProduct.objects.filter(user=request.user).values_list('product_id', flat=True)
-        
         context = {
             'products': all_products,
             'favorite_product_ids': set(favorite_product_ids),
@@ -179,24 +158,93 @@ class SalesFavoriteProductManageView(LoginRequiredMixin, View):
     def post(self, request, *args, **kwargs):
         product_id = request.POST.get('product_id')
         action = request.POST.get('action')
-
         if not product_id or not action:
             messages.error(request, '잘못된 요청입니다.')
             return redirect('sales-favorite-manage')
-
         product = get_object_or_404(Product, id=product_id)
-        
         if action == 'add':
-            # 이미 존재하지 않으면 추가
             if not SalesFavoriteProduct.objects.filter(user=request.user, product=product).exists():
                 SalesFavoriteProduct.objects.create(user=request.user, product=product)
                 messages.success(request, f'"{product.name}"을(를) 선호 품목에 추가했습니다.')
-        
         elif action == 'remove':
-            # 찾아서 삭제
             favorite = SalesFavoriteProduct.objects.filter(user=request.user, product=product)
             if favorite.exists():
                 favorite.delete()
                 messages.success(request, f'"{product.name}"을(를) 선호 품목에서 제거했습니다.')
-
         return redirect('sales-favorite-manage')
+
+# ==========================================
+# 5. [화면] 품목별 생산동 관리
+# ==========================================
+class ProductFacilityManageView(LoginRequiredMixin, View):
+    template_name = 'product_facility_manage.html'
+
+    def get(self, request, *args, **kwargs):
+        product_list = Product.objects.all().order_by('name')
+        
+        # 검색
+        q = request.GET.get('q', '')
+        if q:
+            product_list = product_list.filter(Q(name__icontains=q) | Q(sku__icontains=q))
+
+        # 생산동 필터
+        facility = request.GET.get('facility', 'ALL')
+        if facility == '미지정':
+            product_list = product_list.filter(Q(production_facility__isnull=True) | Q(production_facility=''))
+        elif facility != 'ALL':
+            product_list = product_list.filter(production_facility=facility)
+
+        # 페이지네이션
+        paginator = Paginator(product_list, 25)
+        page_number = request.GET.get('page')
+        page_obj = paginator.get_page(page_number)
+        
+        context = {
+            'page_title': '품목별 생산동 관리',
+            'page_obj': page_obj,
+            'facility_list': FACILITY_LIST,
+            'search_query': q,
+            'selected_facility': facility,
+        }
+        return render(request, self.template_name, context)
+
+    def post(self, request, *args, **kwargs):
+        # 엑셀 파일 업로드 처리
+        if 'facility_file' in request.FILES:
+            try:
+                file = request.FILES['facility_file']
+                wb = openpyxl.load_workbook(file)
+                ws = wb.active
+                updated_count = 0
+                for row in ws.iter_rows(min_row=2, values_only=True):
+                    if not row or len(row) < 2 or not row[0]: continue
+                    sku, facility = row[0], row[1]
+                    try:
+                        product = Product.objects.get(sku=sku)
+                        if product.production_facility != facility:
+                            product.production_facility = facility
+                            product.save(update_fields=['production_facility'])
+                            updated_count += 1
+                    except Product.DoesNotExist:
+                        continue
+                messages.success(request, f"{updated_count}개 품목의 생산동 정보가 엑셀로 업데이트되었습니다.")
+            except Exception as e:
+                messages.error(request, f"엑셀 처리 중 오류 발생: {e}")
+
+        # 개별 업데이트 처리
+        elif 'update_individual' in request.POST:
+            product_ids = request.POST.getlist('product_id')
+            updated_count = 0
+            for pid in product_ids:
+                try:
+                    product = Product.objects.get(id=pid)
+                    new_facility = request.POST.get(f'production_facility_{pid}')
+                    if product.production_facility != new_facility:
+                        product.production_facility = new_facility
+                        product.save(update_fields=['production_facility'])
+                        updated_count += 1
+                except Product.DoesNotExist:
+                    continue
+            messages.success(request, f"{updated_count}개 품목의 생산동 정보가 업데이트되었습니다.")
+            
+        return redirect('product-facility-manage')

@@ -1,9 +1,7 @@
 from django.db import models
 from django.conf import settings  # ★ [수정] User 대신 settings를 가져옵니다.
 from masters.models import Customer, Product
-
-# ★ [통합 관리] 생산동 리스트 정의
-FACILITY_LIST = ['A동', 'B동', 'C동', '관리동', '구운란동', '외부가공']
+from SujuOrderSystem.utils import FACILITY_LIST
 
 class OrderHeader(models.Model):
     """ 발주 요청의 헤더 정보 (거래처, 납기일, 메모 등) """

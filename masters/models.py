@@ -16,10 +16,16 @@ class Product(models.Model):
     name = models.CharField(max_length=100, verbose_name="품목명")
     sku = models.CharField(max_length=50, unique=True, verbose_name="품목코드")
     unit_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="단가")
+    order = models.IntegerField(default=0, verbose_name="정렬 순서")
     
     # 향후 확장을 위한 필드: 생산동 (현재는 사용하지 않음)
     production_facility = models.CharField(max_length=50, null=True, blank=True, verbose_name="생산동") 
     is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['order', 'name']
+        verbose_name = "품목"
+        verbose_name_plural = "품목들"
 
     def __str__(self):
         return f"[{self.sku}] {self.name}"

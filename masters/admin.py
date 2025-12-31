@@ -14,6 +14,7 @@ class CustomerAdmin(admin.ModelAdmin):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ('sku', 'name', 'unit_price', 'production_facility', 'is_active')
+    list_display = ('sku', 'name', 'order', 'unit_price', 'production_facility', 'is_active')
+    list_editable = ('order',)
     search_fields = ('sku', 'name')
     list_filter = ('production_facility', 'is_active')

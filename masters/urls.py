@@ -7,6 +7,7 @@ from .views import (
     search_customers,
     search_products,
     SalesFavoriteProductManageView,
+    ProductFacilityManageView,
 )
 
 urlpatterns = [
@@ -26,4 +27,7 @@ urlpatterns = [
 
     # 5. [화면] 영업사원 선호품목 관리
     path('favorites/', SalesFavoriteProductManageView.as_view(), name='sales-favorite-manage'),
+
+    # 6. [화면] 품목별 생산동 관리
+    path('products/facilities/', ProductFacilityManageView.as_view(), name='product-facility-manage'),
 ]

@@ -4,7 +4,8 @@ from .views import (
     OrderCreateView, 
     my_order_list_api, 
     MyOrderListView,
-    SalesOrderCreateView
+    SalesOrderCreateView,
+    cancel_order
 )
 
 urlpatterns = [
@@ -22,4 +23,7 @@ urlpatterns = [
 
     # 5. 영업부 발주 작성 화면
     path('sales/create/', SalesOrderCreateView.as_view(), name='sales-order-create'),
+
+    # 6. 발주 취소 기능
+    path('cancel/<int:order_id>/', cancel_order, name='cancel_order'),
 ]
