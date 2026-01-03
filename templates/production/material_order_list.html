@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="m-0">부자재 발주 목록</h2>
+        <a href="{% url 'production:material-order-request' %}" class="btn btn-primary">새 발주 요청</a>
+    </div>
+
+    <!-- 날짜 필터 -->
+    <form method="get" class="mb-4">
+        <div class="row">
+            <div class="col-md-3">
+                <input type="date" name="date" class="form-control" value="{{ date_filter }}">
+            </div>
+            <div class="col-md-3">
+                <button type="submit" class="btn btn-secondary">조회</button>
+                <a href="{% url 'production:material-order-list' %}" class="btn btn-outline-secondary">초기화</a>
+            </div>
+        </div>
+    </form>
+
+    {% for order in orders %}
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+                <strong>요청 번호: #{{ order.id }}</strong>
+                <small class="ms-3">요청자: {{ order.requester.username }}</small>
+                <small class="ms-3">요청일시: {{ order.created_at|date:"Y-m-d H:i" }}</small>
+            </div>
+            <div>
+                <span class="badge 
+                    {% if order.status == 'completed' %}bg-success
+                    {% elif order.status == 'cancelled' %}bg-danger
+                    {% else %}bg-warning text-dark
+                    {% endif %}">
+                    {{ order.get_status_display }}
+                </span>
+                <a href="{% url 'production:material-order-detail' order.pk %}" class="btn btn-sm btn-outline-secondary ms-2">상세보기</a>
+                {% if order.status == 'pending' %}
+                <a href="{% url 'production:material-order-edit' order.pk %}" class="btn btn-sm btn-outline-primary ms-1">수정</a>
+                <form action="{% url 'production:material-order-delete' order.pk %}" method="post" class="d-inline" onsubmit="return confirm('정말로 이 발주를 삭제하시겠습니까?');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-danger ms-1">삭제</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+        <div class="card-body">
+            <ul class="list-group list-group-flush">
+                {% for item in order.items.all %}
+                <li class="list-group-item d-flex align-items-center">
+                    {% if item.product.image %}
+                        <img src="{{ item.product.image.url }}" alt="{{ item.product.name }}" style="width: 60px; height: 60px; object-fit: cover; margin-right: 20px; border-radius: 8px;" onclick="showImageModal('{{ item.product.image.url }}')">
+                    {% else %}
+                        <div style="width: 60px; height: 60px; background-color: #eee; margin-right: 20px; border-radius: 8px;" class="d-flex align-items-center justify-content-center">
+                            <small class="text-muted">No Img</small>
+                        </div>
+                    {% endif %}
+                    <div class="flex-grow-1">
+                        <strong>[{{ item.product.sku }}] {{ item.product.name }}</strong>
+                    </div>
+                    <div>
+                        <span class="fw-bold fs-5">{{ item.quantity }}</span> 개
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+    {% empty %}
+        <div class="card">
+            <div class="card-body text-center">
+                발주 요청 내역이 없습니다.
+            </div>
+        </div>
+    {% endfor %}
+
+    <!-- 페이지네이션 -->
+    {% if is_paginated %}
+    <nav aria-label="Page navigation" class="mt-4">
+        <ul class="pagination justify-content-center">
+            {% if page_obj.has_previous %}
+                <li class="page-item"><a class="page-link" href="?date={{ date_filter }}&page={{ page_obj.previous_page_number }}">이전</a></li>
+            {% else %}
+                <li class="page-item disabled"><a class="page-link" href="#">이전</a></li>
+            {% endif %}
+
+            {% for i in paginator.page_range %}
+                {% if page_obj.number == i %}
+                    <li class="page-item active" aria-current="page"><span class="page-link">{{ i }}</span></li>
+                {% else %}
+                    <li class="page-item"><a class="page-link" href="?date={{ date_filter }}&page={{ i }}">{{ i }}</a></li>
+                {% endif %}
+            {% endfor %}
+
+            {% if page_obj.has_next %}
+                <li class="page-item"><a class="page-link" href="?date={{ date_filter }}&page={{ page_obj.next_page_number }}">다음</a></li>
+            {% else %}
+                <li class="page-item disabled"><a class="page-link" href="#">다음</a></li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+</div>
+{% endblock %}

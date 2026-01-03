@@ -1,12 +1,30 @@
 from django.urls import path
-from .views import ProductionStatusView, OrderLineCompleteView, OrderLineBulkCompleteView, OrderLineUpdateView,OrderLineLogListView
+from .views import (
+    ProductionStatusView, 
+    OrderLineCompleteView, 
+    OrderLineBulkCompleteView, 
+    OrderLineUpdateView, 
+    OrderLineLogListView,
+    MaterialOrderRequestView,
+    MaterialOrderListView,
+    MaterialOrderStatusUpdateView,
+    MaterialOrderQuantityUpdateView,
+    material_order_delete,
+)
+
+app_name = 'production'
 
 urlpatterns = [
     path('status/', ProductionStatusView.as_view(), name='production-status-ui'),
     path('line/<int:pk>/complete/', OrderLineCompleteView.as_view(), name='line-complete'),
     path('lines/bulk_complete/', OrderLineBulkCompleteView.as_view(), name='lines-bulk-complete'),
     path('line/<int:pk>/update/', OrderLineUpdateView.as_view(), name='line-update'),
-    
-    # ★ 로그 조회용 URL (대괄호 안에 있어야 함)
     path('line/<int:pk>/logs/', OrderLineLogListView.as_view(), name='line-logs'),
+
+    # 부자재 발주
+    path('material/request/', MaterialOrderRequestView.as_view(), name='material-order-request'),
+    path('material/list/', MaterialOrderListView.as_view(), name='material-order-list'),
+    path('material/<int:pk>/', MaterialOrderStatusUpdateView.as_view(), name='material-order-detail'),
+    path('material/<int:pk>/edit/', MaterialOrderQuantityUpdateView.as_view(), name='material-order-edit'),
+    path('material/<int:pk>/delete/', material_order_delete, name='material-order-delete'),
 ]

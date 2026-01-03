@@ -14,4 +14,8 @@ __pycache__/
 *.py[cod]
 .DS_Store
 
+# 4. 미디어 파일
+/media/
+/raw_materials/
+
 *.tar

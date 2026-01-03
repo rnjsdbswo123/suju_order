@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+
+{% block title %}부자재 발주 수량 수정{% endblock %}
+
+{% block content %}
+<div class="container mt-4" style="max-width: 800px;">
+    <h3 class="fw-bold mb-4">✏️ 부자재 발주 수량 수정 (#{{ order.id }})</h3>
+
+    <div class="card shadow-sm">
+        <div class="card-body p-4">
+            <form method="post">
+                {% csrf_token %}
+                
+                <ul class="list-group list-group-flush">
+                    {% for item in order.items.all %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            {% if item.product.image %}
+                                <img src="{{ item.product.image.url }}" alt="{{ item.product.name }}" style="width: 60px; height: 60px; object-fit: cover; margin-right: 20px; border-radius: 8px;">
+                            {% else %}
+                                <div style="width: 60px; height: 60px; background-color: #eee; margin-right: 20px; border-radius: 8px;" class="d-flex align-items-center justify-content-center">
+                                    <small class="text-muted">No Img</small>
+                                </div>
+                            {% endif %}
+                            <div class="flex-grow-1">
+                                <strong>[{{ item.product.sku }}] {{ item.product.name }}</strong>
+                            </div>
+                        </div>
+                        <div style="width: 150px;">
+                            <input type="number" name="quantity_{{ item.id }}" class="form-control text-end" value="{{ item.quantity }}" min="0">
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+
+                <div class="d-grid gap-2 mt-4">
+                    <button type="submit" class="btn btn-primary fw-bold py-2">수량 수정 완료</button>
+                    <a href="{% url 'production:material-order-list' %}" class="btn btn-outline-secondary">취소</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

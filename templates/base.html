@@ -10,6 +10,7 @@
         body { background-color: #f8f9fa; font-size: 14px; }
         .sticky-bottom-btn { position: fixed; bottom: 0; left: 0; width: 100%; padding: 10px; background: white; border-top: 1px solid #ddd; z-index: 1000; }
         .card { border-radius: 12px; border: none; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        img[onclick] { cursor: pointer; }
     </style>
 </head>
 <body>
@@ -41,6 +42,20 @@
                         </ul>
                     </li>
                     {% endif %}
+
+                    {% is_in_role request.user "생산팀" as is_production %}
+                    {% is_in_role request.user "자재담당자" as is_material_manager %}
+                    {% if is_production or is_material_manager or is_admin %}
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownProduction" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            생산 관리
+                        </a>
+                        <ul class="dropdown-menu" aria-labelledby="navbarDropdownProduction">
+                            <li><a class="dropdown-item" href="{% url 'production:production-status-ui' %}">수주 현황판</a></li>
+                            <li><a class="dropdown-item" href="{% url 'production:material-order-list' %}">부자재 발주</a></li>
+                        </ul>
+                    </li>
+                    {% endif %}
                     
                     {% if is_admin %}
                     <li class="nav-item dropdown">
@@ -48,9 +63,15 @@
                             기준 정보
                         </a>
                         <ul class="dropdown-menu" aria-labelledby="navbarDropdownAdmin">
+                            <li><a class="dropdown-item" href="{% url 'customer-create' %}">➕ 신규 거래처 등록</a></li>
+                            <li><a class="dropdown-item" href="{% url 'product-create' %}">📦 신규 품목 등록</a></li>
+                            <li><a class="dropdown-item" href="{% url 'rawmaterial-create' %}">🧱 신규 부자재 등록</a></li>
+                            <li><a class="dropdown-item" href="{% url 'rawmaterial-list' %}">📋 부자재 목록</a></li>
+                            <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item" href="{% url 'customer-product-manage' %}">🔗 품목 매핑 관리</a></li>
-                            <li><a class="dropdown-item" href="{% url 'data-upload' %}">📂 엑셀 업로드</a></li>
                             <li><a class="dropdown-item" href="{% url 'product-facility-manage' %}">🏭 품목별 생산동 관리</a></li>
+                             <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{% url 'data-upload' %}">📤 일괄 업로드</a></li>
                         </ul>
                     </li>
                     {% endif %}
@@ -82,11 +103,43 @@
     </nav>
 
     <div class="container pb-5 mb-5">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
         {% block content %}{% endblock %}
+    </div>
+
+    <!-- Image Modal -->
+    <div class="modal fade" id="imageModal" tabindex="-1" aria-labelledby="imageModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="imageModalLabel">이미지 상세보기</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <img id="modalImage" src="" class="img-fluid" alt="Enlarged Image">
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    
+    <script>
+        var imageModal = new bootstrap.Modal(document.getElementById('imageModal'), {});
+        function showImageModal(imageUrl) {
+            document.getElementById('modalImage').src = imageUrl;
+            imageModal.show();
+        }
+    </script>
+
     {% block scripts %}{% endblock %}
 </body>
 </html>

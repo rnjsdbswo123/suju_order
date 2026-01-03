@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4" style="max-width: 600px;">
+    <h3 class="fw-bold mb-4">➕ 신규 거래처 등록</h3>
+
+    <div class="card shadow-sm">
+        <div class="card-body p-4">
+            <form method="post">
+                {% csrf_token %}
+
+                {% if form.errors %}
+                    <div class="alert alert-danger">
+                        <strong>오류가 발생했습니다:</strong>
+                        <ul>
+                        {% for field, errors in form.errors.items %}
+                            {% for error in errors %}
+                            <li>{{ field }}: {{ error }}</li>
+                            {% endfor %}
+                        {% endfor %}
+                        </ul>
+                    </div>
+                {% endif %}
+
+                <div class="mb-3">
+                    <label for="id_name" class="form-label fw-bold">거래처명</label>
+                    <input type="text" name="name" id="id_name" class="form-control" required>
+                    <small class="form-text text-muted">다른 거래처와 겹치지 않는 이름을 사용해주세요.</small>
+                </div>
+
+                <div class="mb-3">
+                    <label for="id_business_id" class="form-label fw-bold">사업자번호</label>
+                    <input type="text" name="business_id" id="id_business_id" class="form-control">
+                    <small class="form-text text-muted">선택 항목입니다.</small>
+                </div>
+
+                <div class="d-grid gap-2 mt-4">
+                    <button type="submit" class="btn btn-primary fw-bold py-2">등록하기</button>
+                    <a href="{% url 'data-upload' %}" class="btn btn-outline-secondary">취소</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

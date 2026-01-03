@@ -13,9 +13,9 @@ def role_based_login_redirect_view(request):
     elif is_in_role(request.user, '영업팀'):
         # 영업팀은 영업 발주창으로
         return redirect('sales-order-create')
-    elif is_in_role(request.user, '생산부'):
-        # 생산부는 수주 현황판으로
-        return redirect('production-status-ui')
+    elif is_in_role(request.user, '생산팀'):
+        # 생산팀은 수주 현황판으로
+        return redirect('production:production-status-ui')
     else:
         # 그 외 역할은 내 발주 목록으로 리디렉션
         return redirect('my-order-list')

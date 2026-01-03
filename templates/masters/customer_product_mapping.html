@@ -1,0 +1,351 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<style>
+    /* 로딩 스피너 */
+    .spinner-container {
+        display: none;
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(255, 255, 255, 0.7);
+        z-index: 1050;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* 두 개의 리스트 박스 스타일 */
+    .dual-listbox {
+        display: flex;
+        justify-content: space-between;
+    }
+    .dual-listbox .list-box {
+        width: 45%;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 15px;
+        height: 500px;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .dual-listbox .list-box-header {
+        font-weight: bold;
+        margin-bottom: 10px;
+        font-size: 1.1rem;
+    }
+    .dual-listbox select[multiple] {
+        width: 100%;
+        height: 100%;
+        border-radius: 5px;
+        border-color: #ced4da;
+    }
+    .dual-listbox option {
+        padding: 8px 12px;
+        cursor: pointer;
+        border-bottom: 1px solid #eee;
+    }
+    .dual-listbox option:hover {
+        background-color: #f0f0f0;
+    }
+    .dual-listbox .filter-input {
+        margin-bottom: 10px;
+    }
+
+    /* 이동 버튼 */
+    .dual-listbox .buttons {
+        width: 10%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+    }
+    .dual-listbox .buttons button {
+        margin: 10px 0;
+        width: 50px;
+        height: 50px;
+        font-size: 1.5rem;
+        font-weight: bold;
+    }
+    .select2-container--bootstrap-5 .select2-selection {
+        min-height: 38px;
+        padding-top: 4px;
+        border: 1px solid #ced4da;
+    }
+</style>
+
+<div class="container mt-4 mb-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="fw-bold">🔁 거래처-품목 매핑 관리 (개선)</h2>
+    </div>
+
+    <!-- 거래처 선택 -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-light py-3">
+            <h5 class="mb-0 fw-bold">1. 거래처 선택</h5>
+        </div>
+        <div class="card-body">
+            <select id="customer-select" class="form-select">
+                <option value="">거래처를 검색하거나 선택하세요...</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- 품목 매핑 UI -->
+    <div id="mapping-ui" style="display: none;">
+        <div class="card shadow-sm position-relative">
+             <div class="card-header bg-light py-3">
+                <h5 class="mb-0 fw-bold">2. 품목 매핑</h5>
+            </div>
+            <div class="card-body">
+                <div class="dual-listbox">
+                    <!-- 등록된 품목 -->
+                    <div class="list-box">
+                        <div class="list-box-header text-primary">
+                            <i class="fas fa-link"></i> 등록된 품목 (<span id="mapped-count">0</span>)
+                        </div>
+                        <input type="text" id="mapped-filter" class="form-control filter-input" placeholder="필터...">
+                        <select id="mapped-products" multiple class="form-select"></select>
+                    </div>
+
+                    <!-- 버튼 -->
+                    <div class="buttons">
+                        <button id="add-btn" class="btn btn-outline-secondary">&lt;</button>
+                        <button id="remove-btn" class="btn btn-outline-secondary">&gt;</button>
+                    </div>
+
+                    <!-- 등록 가능한 품목 -->
+                    <div class="list-box">
+                        <div class="list-box-header text-success">
+                            <i class="fas fa-puzzle-piece"></i> 등록 가능한 품목 (<span id="available-count">0</span>)
+                        </div>
+                        <input type="text" id="available-filter" class="form-control filter-input" placeholder="필터...">
+                        <select id="available-products" multiple class="form-select"></select>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer text-end">
+                <button id="save-btn" class="btn btn-primary btn-lg fw-bold px-4">
+                    <i class="fas fa-save"></i> 저장하기
+                </button>
+            </div>
+            <!-- 로딩 스피너 -->
+            <div class="spinner-container" id="spinner">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" />
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/i18n/ko.js"></script>
+
+<!-- Font Awesome 아이콘 -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
+
+<script>
+$(document).ready(function() {
+    // ===================================================================
+    // 1. 초기화 및 변수 선언
+    // ===================================================================
+    const customerSelect = $('#customer-select');
+    const mappingUI = $('#mapping-ui');
+    const availableProductsSelect = $('#available-products');
+    const mappedProductsSelect = $('#mapped-products');
+    const availableFilter = $('#available-filter');
+    const mappedFilter = $('#mapped-filter');
+    const addBtn = $('#add-btn');
+    const removeBtn = $('#remove-btn');
+    const saveBtn = $('#save-btn');
+    const spinner = $('#spinner');
+    
+    let allProducts = []; // 전체 품목 리스트 (캐시)
+    let currentCustomerId = null;
+
+    // ===================================================================
+    // 2. Select2 거래처 검색 초기화
+    // ===================================================================
+    customerSelect.select2({
+        theme: 'bootstrap-5',
+        placeholder: "거래처를 검색하거나 선택하세요",
+        language: "ko",
+        ajax: {
+            url: '/masters/api/search/customers/',
+            dataType: 'json',
+            delay: 250,
+            data: function(params) { return { q: params.term }; },
+            processResults: function(data) { return { results: data.results }; },
+            cache: true
+        }
+    });
+
+    // ===================================================================
+    // 3. 이벤트 핸들러
+    // ===================================================================
+
+    // 거래처 선택 시
+    customerSelect.on('select2:select', function(e) {
+        currentCustomerId = e.params.data.id;
+        if (currentCustomerId) {
+            mappingUI.show();
+            loadProductsForCustomer(currentCustomerId);
+        } else {
+            mappingUI.hide();
+        }
+    });
+
+    // 필터링
+    mappedFilter.on('keyup', () => filterProducts(mappedFilter, mappedProductsSelect));
+    availableFilter.on('keyup', () => filterProducts(availableFilter, availableProductsSelect));
+
+    // 품목 이동
+    addBtn.on('click', () => moveSelected(availableProductsSelect, mappedProductsSelect));
+    removeBtn.on('click', () => moveSelected(mappedProductsSelect, availableProductsSelect));
+    
+    // 더블클릭으로 이동
+    mappedProductsSelect.on('dblclick', () => moveSelected(mappedProductsSelect, availableProductsSelect));
+    availableProductsSelect.on('dblclick', () => moveSelected(availableProductsSelect, mappedProductsSelect));
+
+    // 저장 버튼 클릭 시
+    saveBtn.on('click', saveMappings);
+
+    // ===================================================================
+    // 4. 핵심 기능 함수
+    // ===================================================================
+
+    // 품목 리스트 로드 및 분배
+    async function loadProductsForCustomer(customerId) {
+        spinner.show();
+        try {
+            // 1. 전체 품목 목록 가져오기 (캐시된 데이터가 없으면)
+            if (allProducts.length === 0) {
+                const productsResponse = await $.ajax({ url: '/masters/api/search/products/' });
+                allProducts = productsResponse.results.map(p => ({
+                    id: p.id,
+                    // "품목명 (SKU)" 형식에서 이름만 추출
+                    text: p.text.split(' (')[0]
+                }));
+            }
+            
+            // 2. 해당 거래처에 매핑된 품목 ID 목록 가져오기
+            const mappedResponse = await $.ajax({ url: `/masters/api/customers/${customerId}/products/` });
+            const mappedProductIds = new Set(mappedResponse.map(p => p.id));
+            
+            // 3. 품목 분배
+            const availableProducts = [];
+            const mappedProducts = [];
+            
+            allProducts.forEach(product => {
+                if (mappedProductIds.has(parseInt(product.id))) {
+                    mappedProducts.push(product);
+                } else {
+                    availableProducts.push(product);
+                }
+            });
+
+            // 4. 화면에 렌더링
+            renderProducts(mappedProductsSelect, mappedProducts);
+            renderProducts(availableProductsSelect, availableProducts);
+
+        } catch (error) {
+            console.error("Error loading products:", error);
+            alert("품목 정보를 불러오는 데 실패했습니다.");
+        } finally {
+            spinner.hide();
+        }
+    }
+
+    // 리스트 박스에 품목 렌더링
+    function renderProducts(selectElement, products) {
+        selectElement.empty();
+        products.sort((a, b) => a.text.localeCompare(b.text, 'ko')); // 가나다 순 정렬
+        products.forEach(p => {
+            selectElement.append(`<option value="${p.id}">${p.text}</option>`);
+        });
+        updateCounts();
+    }
+    
+    // 품목 필터링
+    function filterProducts(filterInput, selectElement) {
+        const filterValue = filterInput.val().toLowerCase();
+        selectElement.find('option').each(function() {
+            const text = $(this).text().toLowerCase();
+            $(this).toggle(text.includes(filterValue));
+        });
+    }
+
+    // 선택된 품목 이동
+    function moveSelected(fromSelect, toSelect) {
+        fromSelect.find('option:selected').detach().appendTo(toSelect);
+        filterProducts(mappedFilter, mappedProductsSelect); // 이동 후 필터 재적용
+        filterProducts(availableFilter, availableProductsSelect);
+        sortSelect(toSelect);
+        updateCounts();
+    }
+    
+    // 셀렉트 박스 옵션 가나다순 정렬
+    function sortSelect(selectElement) {
+        selectElement.html(selectElement.find('option').sort((a, b) => {
+            return a.text.localeCompare(b.text, 'ko');
+        }));
+    }
+
+    // 카운트 업데이트
+    function updateCounts() {
+        $('#mapped-count').text(mappedProductsSelect.find('option').length);
+        $('#available-count').text(availableProductsSelect.find('option').length);
+    }
+    
+    // CSRF 토큰 가져오기
+    function getCsrfToken() {
+        return document.cookie.split('; ').find(row => row.startsWith('csrftoken='))?.split('=')[1];
+    }
+
+    // 변경사항 저장
+    function saveMappings() {
+        if (!currentCustomerId) {
+            alert("먼저 거래처를 선택해주세요.");
+            return;
+        }
+        
+        spinner.show();
+        
+        const mappedProductIds = mappedProductsSelect.find('option').map(function() {
+            return $(this).val();
+        }).get();
+
+        $.ajax({
+            url: `/masters/api/update-customer-products/`,
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                customer_id: currentCustomerId,
+                product_ids: mappedProductIds
+            }),
+            headers: {
+                'X-CSRFToken': getCsrfToken()
+            },
+            success: function(response) {
+                spinner.hide();
+                alert(response.message || '성공적으로 저장되었습니다!');
+                // 필요 시, 데이터 다시 로드
+                loadProductsForCustomer(currentCustomerId);
+            },
+            error: function(xhr, status, error) {
+                spinner.hide();
+                console.error("Save error:", error);
+                const errorMsg = xhr.responseJSON?.error || '저장 중 오류가 발생했습니다.';
+                alert(errorMsg);
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

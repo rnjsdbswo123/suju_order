@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}신규 품목 등록{% endblock %}
+
+{% block content %}
+<div class="container mt-4" style="max-width: 600px;">
+    <h3 class="fw-bold mb-4">📦 신규 품목 등록</h3>
+
+    <div class="card shadow-sm">
+        <div class="card-body p-4">
+            <form method="post">
+                {% csrf_token %}
+                
+                {% if form.non_field_errors %}
+                    <div class="alert alert-danger">
+                        {{ form.non_field_errors }}
+                    </div>
+                {% endif %}
+
+                <div class="mb-3">
+                    <label for="id_name" class="form-label fw-bold">품목명</label>
+                    <input type="text" name="name" class="form-control" required id="id_name">
+                </div>
+
+                <div class="mb-3">
+                    <label for="id_sku" class="form-label fw-bold">품목코드 (SKU)</label>
+                    <input type="text" name="sku" class="form-control" required id="id_sku">
+                    <div class="form-text">품목을 식별하는 고유한 코드입니다. 중복될 수 없습니다.</div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="id_unit_price" class="form-label fw-bold">단가</label>
+                        <div class="input-group">
+                            <input type="number" name="unit_price" value="0" class="form-control" required id="id_unit_price">
+                            <span class="input-group-text">원</span>
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="id_production_facility" class="form-label fw-bold">생산동</label>
+                        <select name="production_facility" class="form-select" id="id_production_facility">
+                            <option value="">미지정</option>
+                             {% for facility in facility_list %}
+                                <option value="{{ facility }}">{{ facility }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="d-grid gap-2 mt-4">
+                    <button type="submit" class="btn btn-primary fw-bold py-2">등록하기</button>
+                    <a href="{% url 'data-upload' %}" class="btn btn-outline-secondary">취소</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

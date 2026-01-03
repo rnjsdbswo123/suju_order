@@ -10,7 +10,7 @@ from datetime import timedelta
 import json
 from collections import defaultdict
 from django.db.models import Q
-from .models import OrderHeader, OrderLine, FACILITY_LIST
+from .models import OrderHeader, OrderLine, FACILITY_LIST, OrderLog
 from masters.models import Customer, Product, SalesFavoriteProduct
 from users.permissions import SalesRequiredMixin
 
@@ -23,6 +23,21 @@ class OrderFormView(LoginRequiredMixin, TemplateView):
         context['customers'] = Customer.objects.filter(is_active=True)
         context['facility_list'] = FACILITY_LIST
         context['is_staff'] = self.request.user.is_staff
+        return context
+
+# 1.1. 발주 수정 화면
+class OrderEditView(LoginRequiredMixin, TemplateView):
+    template_name = 'orders/order_edit_form.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        order_id = self.kwargs.get('order_id')
+        order = get_object_or_404(
+            OrderHeader.objects.prefetch_related('lines', 'lines__product'), 
+            id=order_id, 
+            created_by=self.request.user
+        )
+        context['order'] = order
         return context
 
 # 2. 발주 저장 API
@@ -79,6 +94,49 @@ class OrderCreateView(LoginRequiredMixin, View):
 
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=400)
+
+# 2.1. 발주 수정 API
+class OrderUpdateView(LoginRequiredMixin, View):
+    @transaction.atomic
+    def post(self, request, order_id):
+        try:
+            order = get_object_or_404(OrderHeader.objects.prefetch_related('lines', 'lines__product'), id=order_id, created_by=request.user)
+            if order.total_status != '대기':
+                return JsonResponse({'error': '대기 상태인 주문만 수정할 수 있습니다.'}, status=400)
+
+            data = json.loads(request.body)
+            new_items_map = {int(item['line_id']): int(item['quantity']) for item in data.get('items', [])}
+            
+            # 헤더 정보 업데이트
+            order.requested_delivery_date = data.get('delivery_date', order.requested_delivery_date)
+            order.memo = data.get('memo', order.memo)
+            order.save()
+            
+            existing_lines = order.lines.all()
+            logs_to_create = []
+
+            for line in existing_lines:
+                new_quantity = new_items_map.get(line.id)
+                if new_quantity is not None and new_quantity != line.requested_quantity and new_quantity >= 0:
+                    old_quantity = line.requested_quantity
+                    logs_to_create.append(OrderLog(
+                        line=line,
+                        editor=request.user,
+                        change_type='수량 변경',
+                        description=f'{line.product.name} 수량 변경: {old_quantity} -> {new_quantity}'
+                    ))
+                    line.requested_quantity = new_quantity
+                    line.save()
+            
+            if logs_to_create:
+                OrderLog.objects.bulk_create(logs_to_create)
+                return JsonResponse({'message': '주문이 성공적으로 수정되었습니다.'})
+            else:
+                return JsonResponse({'message': '변경 사항이 없어 수정되지 않았습니다.'})
+
+        except Exception as e:
+            return JsonResponse({'error': f'수정 중 오류 발생: {str(e)}'}, status=400)
+
 
 # 3. [API] 내 발주 목록 데이터 (팝업용 - 혹시 몰라 남겨둠)
 def my_order_list_api(request):

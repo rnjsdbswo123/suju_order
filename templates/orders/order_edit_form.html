@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4" style="max-width: 800px;">
+    
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3 class="fw-bold m-0">✏️ 발주 수량 수정</h3>
+        <a href="{% url 'my-order-list' %}" class="btn btn-outline-secondary fw-bold">
+            📋 나의 발주 내역으로 돌아가기
+        </a>
+    </div>
+    
+    <div class="card p-4 shadow-sm">
+        <form id="orderEditForm">
+            <!-- Display Order Info -->
+            <div class="row mb-4 border-bottom pb-3">
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">거래처</label>
+                    <p class="form-control-plaintext">{{ order.customer.name }}</p>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">납기 요청일</label>
+                    <input type="date" id="delivery_date" class="form-control" value="{{ order.requested_delivery_date|date:'Y-m-d' }}">
+                </div>
+                 <div class="col-md-12 mt-3">
+                    <label class="form-label fw-bold">메모</label>
+                    <input type="text" id="memo" class="form-control" value="{{ order.memo|default:'' }}">
+                </div>
+            </div>
+
+            <!-- Editable Product List -->
+            <div class="mb-4">
+                <label class="form-label fw-bold">주문 품목</label>
+                <div id="product-list-area">
+                    {% for line in order.lines.all %}
+                    <div class="d-flex align-items-center justify-content-between mb-2 p-2 border-bottom product-item" data-id="{{ line.product.id }}" data-line-id="{{ line.id }}">
+                        <span class="fw-bold" style="font-size: 1rem;">{{ line.product.name }}</span>
+                        <div style="width: 140px;">
+                            <input type="number" class="form-control text-end fw-bold qty-input" style="font-size:1.2rem;" value="{{ line.requested_quantity }}" min="0">
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary w-100 py-3 fw-bold fs-5">💾 수정 완료</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
+    document.getElementById('orderEditForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const items = [];
+        document.querySelectorAll('.product-item').forEach(row => {
+            const qty = row.querySelector('.qty-input').value;
+            items.push({ 
+                line_id: row.dataset.lineId,
+                quantity: qty 
+            });
+        });
+
+        const payload = {
+            delivery_date: document.getElementById('delivery_date').value,
+            memo: document.getElementById('memo').value,
+            items: items
+        };
+
+        const csrftoken = getCookie('csrftoken');
+        const orderId = {{ order.id }};
+        
+        fetch(`/orders/api/update/${orderId}/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrftoken },
+            body: JSON.stringify(payload)
+        }).then(res => {
+            if(res.ok) { 
+                res.json().then(data => {
+                    alert(data.message);
+                    window.location.href = "{% url 'my-order-list' %}";
+                });
+            } else { 
+                res.json().then(err => alert("오류: " + err.error));
+            }
+        });
+    });
+</script>
+{% endblock %}

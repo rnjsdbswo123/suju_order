@@ -1,9 +1,11 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from django.views.generic import TemplateView
-from django.views import View
+from django.views.generic import TemplateView, View, ListView, UpdateView
+from django.urls import reverse_lazy
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib import messages
-from rest_framework.decorators import api_view
+from django.db import transaction
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db.models import Q
 import openpyxl
@@ -11,7 +13,7 @@ from SujuOrderSystem.utils import FACILITY_LIST
 from django.core.paginator import Paginator
 
 # 모델 가져오기
-from .models import Customer, Product, CustomerProductMap, SalesFavoriteProduct
+from .models import Customer, Product, CustomerProductMap, SalesFavoriteProduct, RawMaterial
 
 # ==========================================
 # 1. [화면] 엑셀 데이터 일괄 업로드
@@ -96,6 +98,12 @@ class CustomerProductManageView(LoginRequiredMixin, TemplateView):
                 CustomerProductMap.objects.create(customer_id=customer_id, product_id=product_id)
         return redirect('customer-product-manage')
 
+# ==========================================
+# 2.1. [화면] 거래처-품목 매핑 직접 관리 (개선)
+# ==========================================
+class CustomerProductMappingView(LoginRequiredMixin, TemplateView):
+    template_name = 'masters/customer_product_mapping.html'
+
 def delete_customer_product(request, pk):
     mapping = get_object_or_404(CustomerProductMap, pk=pk)
     mapping.delete()
@@ -131,13 +139,42 @@ def search_products(request):
             Q(name__icontains=query) | Q(sku__icontains=query)
         )
     else:
-        products = Product.objects.all().order_by('-id')
-    products = products[:20]
+        # 개선된 UI에서는 모든 품목을 가져와야 하므로 all() 사용. 페이지네이션 등 성능 고려 필요.
+        products = Product.objects.all().order_by('name')
+
+    # 모든 품목을 반환하도록 수정 (기존 :20 제한 해제)
     data = [
         {"id": p.id, "text": f"{p.name} ({p.sku})"} 
         for p in products
     ]
     return Response({"results": data})
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def update_customer_products(request):
+    customer_id = request.data.get('customer_id')
+    product_ids = request.data.get('product_ids', [])
+
+    if not customer_id:
+        return Response({"error": "거래처 ID가 필요합니다."}, status=400)
+
+    try:
+        with transaction.atomic():
+            # 기존 매핑 삭제
+            CustomerProductMap.objects.filter(customer_id=customer_id).delete()
+            
+            # 새 매핑 추가
+            new_mappings = [
+                CustomerProductMap(customer_id=customer_id, product_id=pid)
+                for pid in product_ids
+            ]
+            CustomerProductMap.objects.bulk_create(new_mappings)
+            
+        return Response({"message": f"{len(product_ids)}개의 품목 매핑을 저장했습니다."})
+
+    except Exception as e:
+        return Response({"error": f"저장 중 오류 발생: {str(e)}"}, status=500)
+
 
 # ==========================================
 # 4. [화면] 영업사원 선호품목 관리
@@ -248,3 +285,115 @@ class ProductFacilityManageView(LoginRequiredMixin, View):
             messages.success(request, f"{updated_count}개 품목의 생산동 정보가 업데이트되었습니다.")
             
         return redirect('product-facility-manage')
+
+# ==========================================
+# 6. [화면] 신규 거래처/품목 개별 등록
+# ==========================================
+class CustomerCreateView(LoginRequiredMixin, View):
+    def get(self, request):
+        return render(request, 'masters/customer_form.html')
+
+    def post(self, request):
+        name = request.POST.get('name')
+        business_id = request.POST.get('business_id')
+
+        if not name:
+            messages.error(request, "거래처명은 필수입니다.")
+            return render(request, 'masters/customer_form.html', {'name': name, 'business_id': business_id})
+
+        if Customer.objects.filter(name=name).exists():
+            messages.error(request, "이미 존재하는 거래처명입니다.")
+            return render(request, 'masters/customer_form.html', {'name': name, 'business_id': business_id})
+
+        Customer.objects.create(name=name, business_id=business_id)
+        messages.success(request, f"거래처 '{name}'이(가) 성공적으로 등록되었습니다.")
+        return redirect('data-upload')
+
+class ProductCreateView(LoginRequiredMixin, View):
+    def get(self, request):
+        context = {'facility_list': FACILITY_LIST}
+        return render(request, 'masters/product_form.html', context)
+
+    def post(self, request):
+        name = request.POST.get('name')
+        sku = request.POST.get('sku')
+        unit_price = request.POST.get('unit_price', 0)
+        production_facility = request.POST.get('production_facility')
+
+        form_data = {
+            'name': name, 'sku': sku, 'unit_price': unit_price, 
+            'production_facility': production_facility
+        }
+        context = {'form_data': form_data, 'facility_list': FACILITY_LIST}
+
+        if not name or not sku:
+            messages.error(request, "품목명과 품목코드는 필수입니다.")
+            return render(request, 'masters/product_form.html', context)
+
+        if Product.objects.filter(sku=sku).exists():
+            messages.error(request, "이미 존재하는 품목코드입니다.")
+            return render(request, 'masters/product_form.html', context)
+
+        Product.objects.create(
+            name=name,
+            sku=sku,
+            unit_price=unit_price,
+            production_facility=production_facility
+        )
+        messages.success(request, f"품목 '{name}'이(가) 성공적으로 등록되었습니다.")
+        return redirect('data-upload')
+
+
+class RawMaterialCreateView(LoginRequiredMixin, View):
+    def get(self, request):
+        return render(request, 'masters/rawmaterial_form.html')
+
+    def post(self, request):
+        name = request.POST.get('name')
+        sku = request.POST.get('sku')
+        barcode = request.POST.get('barcode')
+        unit_price = request.POST.get('unit_price', 0)
+        image = request.FILES.get('image')
+
+        form_data = {
+            'name': name, 'sku': sku, 'barcode': barcode, 'unit_price': unit_price
+        }
+        context = {'form_data': form_data}
+
+        if not name or not sku:
+            messages.error(request, "부자재명과 부자재코드는 필수입니다.")
+            return render(request, 'masters/rawmaterial_form.html', context)
+
+        if RawMaterial.objects.filter(sku=sku).exists():
+            messages.error(request, "이미 존재하는 부자재코드입니다.")
+            return render(request, 'masters/rawmaterial_form.html', context)
+
+        RawMaterial.objects.create(
+            name=name,
+            sku=sku,
+            barcode=barcode,
+            unit_price=unit_price,
+            image=image
+        )
+        messages.success(request, f"부자재 '{name}'이(가) 성공적으로 등록되었습니다.")
+        return redirect('data-upload')
+
+
+class RawMaterialListView(LoginRequiredMixin, ListView):
+    model = RawMaterial
+    template_name = 'masters/rawmaterial_list.html'
+    context_object_name = 'materials'
+    paginate_by = 20
+    ordering = ['name']
+
+
+class RawMaterialUpdateView(LoginRequiredMixin, UpdateView):
+    model = RawMaterial
+    fields = ['name', 'sku', 'barcode', 'unit_price', 'image', 'is_active']
+    template_name = 'masters/rawmaterial_form.html'
+    success_url = reverse_lazy('rawmaterial-list')
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['is_edit_mode'] = True
+        return context

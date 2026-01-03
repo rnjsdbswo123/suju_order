@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+
+{% block title %}{% if is_edit_mode %}부자재 수정{% else %}신규 부자재 등록{% endif %}{% endblock %}
+
+{% block content %}
+<div class="container mt-4" style="max-width: 600px;">
+    <h3 class="fw-bold mb-4">{% if is_edit_mode %}✏️ 부자재 수정{% else %}📦 신규 부자재 등록{% endif %}</h3>
+
+    <div class="card shadow-sm">
+        <div class="card-body p-4">
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+
+                {% if messages %}
+                    {% for message in messages %}
+                    <div class="alert alert-{% if message.tags %}{{ message.tags }}{% else %}info{% endif %}">{{ message }}</div>
+                    {% endfor %}
+                {% endif %}
+
+                <div class="mb-3">
+                    <label for="id_name" class="form-label fw-bold">부자재명</label>
+                    <input type="text" name="name" class="form-control" required id="id_name" value="{{ form.instance.name|default:'' }}">
+                </div>
+
+                <div class="mb-3">
+                    <label for="id_sku" class="form-label fw-bold">부자재코드 (SKU)</label>
+                    <input type="text" name="sku" class="form-control" required id="id_sku" value="{{ form.instance.sku|default:'' }}">
+                    <div class="form-text">부자재를 식별하는 고유한 코드입니다. 중복될 수 없습니다.</div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="id_barcode" class="form-label fw-bold">바코드</label>
+                    <input type="text" name="barcode" class="form-control" id="id_barcode" value="{{ form.instance.barcode|default:'' }}">
+                </div>
+
+                <div class="mb-3">
+                    <label for="id_unit_price" class="form-label fw-bold">단가</label>
+                    <div class="input-group">
+                        <input type="number" name="unit_price" value="{{ form.instance.unit_price|default:0 }}" class="form-control" required id="id_unit_price">
+                        <span class="input-group-text">원</span>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="id_image" class="form-label fw-bold">이미지</label>
+                    {% if form.instance.image %}
+                        <div class="mb-2">
+                            현재 이미지: 
+                            <img src="{{ form.instance.image.url }}" alt="{{ form.instance.name }}" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px; vertical-align: middle;" onclick="showImageModal('{{ form.instance.image.url }}')">
+                            <a href="{{ form.instance.image.url }}" target="_blank">{{ form.instance.image.name }}</a>
+                        </div>
+                    {% endif %}
+                    <input type="file" name="image" class="form-control" id="id_image">
+                </div>
+
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" name="is_active" id="id_is_active" {% if form.instance.is_active %}checked{% endif %}>
+                    <label class="form-check-label" for="id_is_active">
+                        활성 상태
+                    </label>
+                </div>
+
+
+                <div class="d-grid gap-2 mt-4">
+                    <button type="submit" class="btn btn-primary fw-bold py-2">{% if is_edit_mode %}수정하기{% else %}등록하기{% endif %}</button>
+                    <a href="{% if is_edit_mode %}{% url 'rawmaterial-list' %}{% else %}{% url 'data-upload' %}{% endif %}" class="btn btn-outline-secondary">취소</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

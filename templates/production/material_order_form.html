@@ -1,0 +1,180 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>부자재 발주 요청</h2>
+    <p>바코드 또는 품목명으로 검색하여 발주할 품목을 추가하세요.</p>
+
+    <!-- 검색 폼 -->
+    <form method="get" action="" class="mb-4">
+        <div class="input-group">
+            <input type="text" name="search" class="form-control" placeholder="바코드 또는 품목명 입력..." value="{{ search_query }}">
+            <button class="btn btn-primary" type="submit">검색</button>
+        </div>
+    </form>
+
+    <form method="post" id="order-form">
+        {% csrf_token %}
+        
+        <!-- 검색 결과 및 품목 선택 -->
+        {% if products %}
+            <h5>검색 결과</h5>
+            <div class="list-group">
+                {% for product in products %}
+                <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        {% if product.image %}
+                            <img src="{{ product.image.url }}" alt="{{ product.name }}" style="width: 50px; height: 50px; object-fit: cover; margin-right: 15px;" onclick="showImageModal('{{ product.image.url }}')">
+                        {% endif %}
+                        <span>[{{ product.sku }}] {{ product.name }}</span>
+                        <small class="text-muted d-block">바코드: {{ product.barcode|default:'N/A' }}</small>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-success" onclick="addSelectedItem('{{ product.id }}', '{{ product.name }}', '{{ product.sku }}', '{% if product.image %}{{ product.image.url }}{% endif %}')">추가</button>
+                </div>
+                {% endfor %}
+            </div>
+        {% elif search_query %}
+            <div class="alert alert-warning">"{{ search_query }}"에 대한 검색 결과가 없습니다.</div>
+        {% endif %}
+
+        <!-- 선택된 발주 품목 -->
+        <h5 class="mt-5">발주 목록</h5>
+        <div class="card">
+            <div class="card-body">
+                <table class="table" id="selected-items-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 50%;">품목</th>
+                            <th style="width: 20%;">수량</th>
+                            <th style="width: 10%;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- 자바스크립트로 동적 추가 -->
+                    </tbody>
+                </table>
+                <p id="empty-cart-message">발주할 품목을 추가하세요.</p>
+            </div>
+        </div>
+
+        <div class="d-grid gap-2 mt-4">
+            <button type="submit" class="btn btn-success btn-lg">발주 요청하기</button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const isEditMode = {{ is_edit_mode|yesno:"true,false" }};
+    const orderItemsJson = '{{ order_items_json|escapejs|default:"[]" }}';
+    
+    const selectedItemsTbody = document.getElementById('selected-items-table').getElementsByTagName('tbody')[0];
+    const emptyCartMessage = document.getElementById('empty-cart-message');
+
+    document.addEventListener('DOMContentLoaded', function() {
+        if (isEditMode) {
+            sessionStorage.removeItem('materialOrderCart');
+            const items = JSON.parse(orderItemsJson);
+            items.forEach(item => {
+                addSelectedItem(item.id, item.name, item.sku, item.imageUrl, item.quantity, false);
+            });
+        } else {
+            loadCart();
+        }
+
+        const orderForm = document.getElementById('order-form');
+        orderForm.addEventListener('submit', function() {
+            sessionStorage.removeItem('materialOrderCart');
+        });
+
+        selectedItemsTbody.addEventListener('change', function(e) {
+            if (e.target.classList.contains('form-control') && e.target.name === 'quantity') {
+                if (!isEditMode) {
+                    saveCart();
+                }
+            }
+        });
+    });
+
+    function getCart() {
+        return JSON.parse(sessionStorage.getItem('materialOrderCart')) || [];
+    }
+
+    function saveCart() {
+        const cart = [];
+        const rows = selectedItemsTbody.rows;
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            cart.push({
+                id: row.dataset.id,
+                name: row.dataset.name,
+                sku: row.dataset.sku,
+                imageUrl: row.dataset.imageUrl,
+                quantity: row.querySelector('input[name="quantity"]').value,
+            });
+        }
+        sessionStorage.setItem('materialOrderCart', JSON.stringify(cart));
+    }
+
+    function loadCart() {
+        const cart = getCart();
+        if (cart.length > 0) {
+            emptyCartMessage.style.display = 'none';
+            cart.forEach(item => {
+                addSelectedItem(item.id, item.name, item.sku, item.imageUrl, item.quantity, false);
+            });
+        }
+    }
+
+    function addSelectedItem(id, name, sku, imageUrl, quantity = 1, shouldSave = true) {
+        if (document.getElementById(`row-${id}`)) {
+            alert("이미 추가된 품목입니다.");
+            return;
+        }
+
+        emptyCartMessage.style.display = 'none';
+
+        const row = selectedItemsTbody.insertRow();
+        row.id = `row-${id}`;
+        row.dataset.id = id;
+        row.dataset.name = name;
+        row.dataset.sku = sku;
+        row.dataset.imageUrl = imageUrl;
+        
+        const cell1 = row.insertCell(0);
+        const cell2 = row.insertCell(1);
+        const cell3 = row.insertCell(2);
+
+        cell1.innerHTML = `
+            <div class="d-flex align-items-center">
+                ${imageUrl ? `<img src="${imageUrl}" style="width: 40px; height: 40px; object-fit: cover; margin-right: 10px; border-radius: 4px;" onclick="showImageModal('${imageUrl}')">` : '<div style="width: 40px; height: 40px; background-color: #eee; margin-right: 10px; border-radius: 4px;"></div>'}
+                <div>
+                    <strong>[${sku}] ${name}</strong>
+                    <input type="hidden" name="product_id" value="${id}">
+                </div>
+            </div>
+        `;
+
+        cell2.innerHTML = `<input type="number" name="quantity" class="form-control" value="${quantity}" min="1">`;
+        cell3.innerHTML = `<button type="button" class="btn btn-sm btn-danger" onclick="removeItem(this)">삭제</button>`;
+        
+        if (shouldSave && !isEditMode) {
+            saveCart();
+        }
+    }
+
+    function removeItem(button) {
+        const row = button.parentNode.parentNode;
+        row.parentNode.removeChild(row);
+
+        if (selectedItemsTbody.rows.length === 0) {
+            emptyCartMessage.style.display = 'block';
+        }
+        
+        if (!isEditMode) {
+            saveCart();
+        }
+    }
+</script>
+{% endblock %}

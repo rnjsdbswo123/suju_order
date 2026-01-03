@@ -15,16 +15,24 @@
     .product-row input { text-align: right; }
 </style>
 
+{# 수정 모드일 경우, Django order 객체를 Javascript 객체로 변환 #}
+<script>
+    {% if order_data %}
+    const EDIT_ORDER = {{ order_data|json_script:"edit-order-data" }};
+    {% else %}
+    const EDIT_ORDER = null;
+    {% endif %}
+</script>
+
 <div class="container mt-4" style="max-width: 800px;">
     
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h3 class="fw-bold m-0">📝 발주서 작성</h3>
         <div class="d-flex gap-2">
-            <a href="/orders/my-list/" class="btn btn-outline-primary fw-bold">
+            <a href="{% url 'my-order-list' %}" class="btn btn-outline-primary fw-bold">
                 📋 나의 발주 내역
             </a>
-            
-            <a href="/api/production/status/" class="btn btn-primary fw-bold">
+            <a href="{% url 'production:production-status-ui' %}" class="btn btn-primary fw-bold">
                 📊 수주 현황판 가기
             </a>
         </div>
@@ -99,10 +107,9 @@
     }
 
     $(document).ready(function() {
-        // 15시 마감 로직 체크
-        checkTimeAndSetDate();
-
-        // 거래처 검색 설정
+        const isEditMode = typeof EDIT_ORDER !== 'undefined' && EDIT_ORDER !== null;
+        
+        // 1. 거래처 검색 설정
         $('#customer-select').select2({
             theme: 'bootstrap-5',
             placeholder: "거래처명 검색...",
@@ -112,41 +119,72 @@
             minimumResultsForSearch: 0
         });
 
+        // 2. 수정 모드 처리
+        if (isEditMode) {
+            $('.fw-bold.m-0').text('✏️ 발주서 수정');
+            $('button[type="submit"]').html('💾 수정 완료');
+            
+            // 거래처 선택 및 비활성화
+            $('#customer-select').val(EDIT_ORDER.customer.id).trigger('change').prop('disabled', true);
+            
+            // 납기일, 메모 설정
+            $('#delivery_date').val(EDIT_ORDER.requested_delivery_date);
+            $('#memo').val(EDIT_ORDER.memo);
+
+            // 품목 로드 및 수량 채우기
+            loadProducts(EDIT_ORDER.customer.id, () => {
+                EDIT_ORDER.lines.forEach(line => {
+                    const productRow = $(`.product-item[data-id="${line.product.id}"]`);
+                    if (productRow.length) {
+                        productRow.find('.qty-input').val(line.requested_quantity);
+                    }
+                });
+            });
+
+        } else {
+            // 생성 모드: 15시 마감 로직 체크
+            checkTimeAndSetDate();
+        }
+        
+        // 3. 이벤트 리스너
         $('#customer-select').on('select2:select', function (e) {
-            loadProducts(e.params.data.id);
+            if (!isEditMode) {
+                loadProducts(e.params.data.id);
+            }
+        });
+
+        $('#orderForm').on('submit', function(e) {
+            e.preventDefault();
+            submitOrder(isEditMode);
         });
     });
 
     // 15시 체크 함수
     function checkTimeAndSetDate() {
+        if (EDIT_ORDER) return; // 수정 모드에서는 날짜를 바꾸지 않음
+        
         const dateInput = document.getElementById('delivery_date');
         const warning = document.getElementById('date-warning');
 
         if (IS_STAFF) {
             warning.style.display = 'none';
-            // 관리자는 오늘 날짜부터 선택 가능
             let today = new Date();
             const yyyy = today.getFullYear();
             const mm = String(today.getMonth() + 1).padStart(2, '0');
             const dd = String(today.getDate()).padStart(2, '0');
             dateInput.min = `${yyyy}-${mm}-${dd}`;
-            if (!dateInput.value) {
-                dateInput.value = `${yyyy}-${mm}-${dd}`;
-            }
+            if (!dateInput.value) { dateInput.value = `${yyyy}-${mm}-${dd}`; }
             return;
         }
 
         const now = new Date();
         const hour = now.getHours();
-        
         let targetDate = new Date();
         
-        // 15시(오후 3시) 이상이면 -> 모레부터 가능
         if (hour >= 15) {
             targetDate.setDate(now.getDate() + 2);
             warning.style.display = 'block'; 
         } else {
-            // 15시 전이면 -> 내일부터 가능
             targetDate.setDate(now.getDate() + 1);
             warning.style.display = 'none';
         }
@@ -160,8 +198,8 @@
         dateInput.min = strDate; 
     }
 
-    function loadProducts(customerId) {
-        fetch(`/api/masters/customers/${customerId}/products/`)
+    function loadProducts(customerId, callback) {
+        fetch(`/masters/api/customers/${customerId}/products/`)
         .then(res => res.json())
         .then(data => {
             const container = document.getElementById('product-list-area');
@@ -189,6 +227,8 @@
                     </div>
                 `;
             });
+
+            if (callback) callback();
         });
     }
 
@@ -206,36 +246,50 @@
         }
     }
 
-    document.getElementById('orderForm').addEventListener('submit', function(e) {
-        e.preventDefault();
+    function submitOrder(isEditMode) {
         const customerId = $('#customer-select').val();
         if(!customerId) { alert("거래처를 선택해주세요!"); return; }
 
         const items = [];
         document.querySelectorAll('.product-item').forEach(row => {
             const qty = row.querySelector('.qty-input').value;
-            if(qty && parseInt(qty) > 0) items.push({ product_id: row.dataset.id, quantity: qty });
+            if(qty && parseInt(qty) >= 0) { // 수정 시 0으로 만드는 경우도 포함
+                items.push({ product_id: row.dataset.id, quantity: qty });
+            }
         });
 
-        if(items.length === 0) { alert("수량을 입력해주세요."); return; }
+        if(items.length === 0) { alert("수량을 1개 이상 입력해주세요."); return; }
+        
+        let url, method;
+        if (isEditMode) {
+            url = `/orders/api/update/${EDIT_ORDER.id}/`;
+            method = 'POST'; // or 'PUT'
+        } else {
+            url = '/orders/api/create/';
+            method = 'POST';
+        }
 
-        fetch('/api/orders/create/', {
-            method: 'POST',
+        const payload = {
+            customer_id: customerId,
+            delivery_date: document.getElementById('delivery_date').value,
+            memo: document.getElementById('memo').value,
+            items: items
+        };
+
+        fetch(url, {
+            method: method,
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrftoken },
-            body: JSON.stringify({
-                customer_id: customerId,
-                delivery_date: document.getElementById('delivery_date').value,
-                memo: document.getElementById('memo').value,
-                items: items
-            })
+            body: JSON.stringify(payload)
         }).then(res => {
             if(res.ok) { 
-                alert("발주 완료! 🎉"); 
-                location.reload(); 
+                res.json().then(data => {
+                    alert(data.message);
+                    window.location.href = "{% url 'my-order-list' %}";
+                });
             } else { 
                 res.json().then(err => alert("오류: " + err.error));
             }
         });
-    });
+    }
 </script>
 {% endblock %}

@@ -30,6 +30,23 @@ class Product(models.Model):
     def __str__(self):
         return f"[{self.sku}] {self.name}"
 
+
+class RawMaterial(models.Model):
+    name = models.CharField(max_length=100, verbose_name="부자재명")
+    sku = models.CharField(max_length=50, unique=True, verbose_name="부자재코드")
+    barcode = models.CharField(max_length=100, blank=True, null=True, db_index=True, verbose_name="바코드")
+    image = models.ImageField(upload_to='raw_materials/', blank=True, null=True, verbose_name="이미지")
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="단가")
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "부자재"
+        verbose_name_plural = "부자재들"
+
+    def __str__(self):
+        return f"[{self.sku}] {self.name}"
+
+
 # 3. 거래처-품목 매핑 (CustomerProductMap) 모델
 class CustomerProductMap(models.Model):
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE)
