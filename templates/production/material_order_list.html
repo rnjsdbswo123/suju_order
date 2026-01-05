@@ -61,7 +61,15 @@
                         <strong>[{{ item.product.sku }}] {{ item.product.name }}</strong>
                     </div>
                     <div>
-                        <span class="fw-bold fs-5">{{ item.quantity }}</span> 개
+                        {% if item.box_quantity > 0 %}
+                            <span class="fw-bold fs-5">{{ item.box_quantity }}</span> 박스 
+                        {% endif %}
+                        {% if item.bundle_quantity > 0 %}
+                            <span class="fw-bold fs-5">{{ item.bundle_quantity }}</span> 묶음 
+                        {% endif %}
+                        {% if item.each_quantity > 0 %}
+                            <span class="fw-bold fs-5">{{ item.each_quantity }}</span> 개
+                        {% endif %}
                     </div>
                 </li>
                 {% endfor %}

@@ -16,6 +16,13 @@
     <form method="post" id="order-form">
         {% csrf_token %}
         
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <label for="id_requested_delivery_date" class="form-label fw-bold">납기 요청일</label>
+                <input type="date" name="requested_delivery_date" class="form-control" required id="id_requested_delivery_date" value="{% now "Y-m-d" %}" min="{% now "Y-m-d" %}">
+            </div>
+        </div>
+
         <!-- 검색 결과 및 품목 선택 -->
         {% if products %}
             <h5>검색 결과</h5>
@@ -27,9 +34,9 @@
                             <img src="{{ product.image.url }}" alt="{{ product.name }}" style="width: 50px; height: 50px; object-fit: cover; margin-right: 15px;" onclick="showImageModal('{{ product.image.url }}')">
                         {% endif %}
                         <span>[{{ product.sku }}] {{ product.name }}</span>
-                        <small class="text-muted d-block">바코드: {{ product.barcode|default:'N/A' }}</small>
+                        <small class="text-muted d-block">바코드: {{ product.barcode|default:'N/A' }} / 박스당 {{product.bundles_per_box}}묶음 / 묶음당 {{product.units_per_bundle}}개</small>
                     </div>
-                    <button type="button" class="btn btn-sm btn-outline-success" onclick="addSelectedItem('{{ product.id }}', '{{ product.name }}', '{{ product.sku }}', '{% if product.image %}{{ product.image.url }}{% endif %}')">추가</button>
+                    <button type="button" class="btn btn-sm btn-outline-success" onclick="addSelectedItem('{{ product.id }}', '{{ product.name }}', '{{ product.sku }}', '{% if product.image %}{{ product.image.url }}{% endif %}', '{{ product.units_per_bundle }}', '{{ product.bundles_per_box }}')">추가</button>
                 </div>
                 {% endfor %}
             </div>
@@ -44,9 +51,9 @@
                 <table class="table" id="selected-items-table">
                     <thead>
                         <tr>
-                            <th style="width: 50%;">품목</th>
-                            <th style="width: 20%;">수량</th>
-                            <th style="width: 10%;"></th>
+                            <th style="width: 40%;">품목</th>
+                            <th style="width: 45%;">수량 (박스/묶음/개)</th>
+                            <th style="width: 15%;"></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -77,7 +84,8 @@
             sessionStorage.removeItem('materialOrderCart');
             const items = JSON.parse(orderItemsJson);
             items.forEach(item => {
-                addSelectedItem(item.id, item.name, item.sku, item.imageUrl, item.quantity, false);
+                // Note: Edit mode does not support unit breakdown yet. This needs further implementation if required.
+                addSelectedItem(item.id, item.name, item.sku, item.imageUrl, 1, 1, { box: 0, bundle: 0, each: item.quantity }, false);
             });
         } else {
             loadCart();
@@ -89,7 +97,7 @@
         });
 
         selectedItemsTbody.addEventListener('change', function(e) {
-            if (e.target.classList.contains('form-control') && e.target.name === 'quantity') {
+            if (e.target.classList.contains('form-control')) {
                 if (!isEditMode) {
                     saveCart();
                 }
@@ -111,7 +119,13 @@
                 name: row.dataset.name,
                 sku: row.dataset.sku,
                 imageUrl: row.dataset.imageUrl,
-                quantity: row.querySelector('input[name="quantity"]').value,
+                units_per_bundle: row.dataset.unitsPerBundle,
+                bundles_per_box: row.dataset.bundlesPerBox,
+                quantity: {
+                    box: row.querySelector(`input[name="box_${row.dataset.id}"]`).value,
+                    bundle: row.querySelector(`input[name="bundle_${row.dataset.id}"]`).value,
+                    each: row.querySelector(`input[name="each_${row.dataset.id}"]`).value
+                }
             });
         }
         sessionStorage.setItem('materialOrderCart', JSON.stringify(cart));
@@ -122,12 +136,12 @@
         if (cart.length > 0) {
             emptyCartMessage.style.display = 'none';
             cart.forEach(item => {
-                addSelectedItem(item.id, item.name, item.sku, item.imageUrl, item.quantity, false);
+                addSelectedItem(item.id, item.name, item.sku, item.imageUrl, item.units_per_bundle, item.bundles_per_box, item.quantity, false);
             });
         }
     }
 
-    function addSelectedItem(id, name, sku, imageUrl, quantity = 1, shouldSave = true) {
+    function addSelectedItem(id, name, sku, imageUrl, units_per_bundle, bundles_per_box, quantity = {box: 0, bundle: 0, each: 0}, shouldSave = true) {
         if (document.getElementById(`row-${id}`)) {
             alert("이미 추가된 품목입니다.");
             return;
@@ -141,6 +155,8 @@
         row.dataset.name = name;
         row.dataset.sku = sku;
         row.dataset.imageUrl = imageUrl;
+        row.dataset.unitsPerBundle = units_per_bundle;
+        row.dataset.bundlesPerBox = bundles_per_box;
         
         const cell1 = row.insertCell(0);
         const cell2 = row.insertCell(1);
@@ -156,7 +172,16 @@
             </div>
         `;
 
-        cell2.innerHTML = `<input type="number" name="quantity" class="form-control" value="${quantity}" min="1">`;
+        cell2.innerHTML = `
+            <div class="input-group input-group-sm">
+                <input type="number" name="box_${id}" class="form-control" placeholder="박스" min="0" value="${quantity.box || 0}">
+                <span class="input-group-text">박스</span>
+                <input type="number" name="bundle_${id}" class="form-control" placeholder="묶음" min="0" value="${quantity.bundle || 0}">
+                <span class="input-group-text">묶음</span>
+                <input type="number" name="each_${id}" class="form-control" placeholder="개" min="0" value="${quantity.each || 0}">
+                <span class="input-group-text">개</span>
+            </div>
+        `;
         cell3.innerHTML = `<button type="button" class="btn btn-sm btn-danger" onclick="removeItem(this)">삭제</button>`;
         
         if (shouldSave && !isEditMode) {

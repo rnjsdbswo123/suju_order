@@ -189,6 +189,7 @@ class SalesOrderCreateView(LoginRequiredMixin, SalesRequiredMixin, View):
         context = {
             'page_title': '영업부 발주',
             'favorite_products': favorite_products,
+            'is_staff': request.user.is_staff,
         }
         return render(request, self.template_name, context)
 

@@ -10,6 +10,7 @@ urlpatterns = [
     # [API 경로]
     path('api/orders/', include('orders.urls')), 
     path('api/masters/', include('masters.urls')),
+    path('api/production/', include('production.urls')),
     
     # [화면 경로]
     path('orders/', include('orders.urls')),

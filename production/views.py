@@ -48,21 +48,32 @@ class MaterialOrderRequestView(LoginRequiredMixin, CreateView):
         with transaction.atomic():
             order = form.save(commit=False)
             order.requester = self.request.user
+            order.requested_delivery_date = self.request.POST.get('requested_delivery_date')
             order.save()
 
             product_ids = self.request.POST.getlist('product_id')
-            quantities = self.request.POST.getlist('quantity')
 
-            for i, product_id in enumerate(product_ids):
-                if product_id and quantities[i]:
-                    product = RawMaterial.objects.get(id=product_id)
-                    quantity = int(quantities[i])
-                    if quantity > 0:
+            for product_id in product_ids:
+                try:
+                    box_qty = int(self.request.POST.get(f'box_{product_id}', 0) or 0)
+                    bundle_qty = int(self.request.POST.get(f'bundle_{product_id}', 0) or 0)
+                    each_qty = int(self.request.POST.get(f'each_{product_id}', 0) or 0)
+
+                    if (box_qty + bundle_qty + each_qty) > 0:
                         MaterialOrderItem.objects.create(
                             material_order=order,
-                            product=product,
-                            quantity=quantity
+                            product_id=product_id,
+                            box_quantity=box_qty,
+                            bundle_quantity=bundle_qty,
+                            each_quantity=each_qty
                         )
+                except ValueError:
+                    # 수량 변환에 실패한 경우 해당 품목은 무시
+                    continue
+        
+        if not order.items.exists():
+            order.delete()
+        
         return super().form_valid(form)
 
 
