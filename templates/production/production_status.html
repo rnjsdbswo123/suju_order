@@ -49,6 +49,9 @@
                 <span class="badge text-dark border" style="background-color: #ffe5d0;">🟧 수량 불일치</span>
             </div>
             <div>
+                <button class="btn btn-info btn-sm fw-bold shadow-sm" onclick="openBulkEditModal()">
+                    ✏️ 체크된 항목 일괄 수정
+                </button>
                 <button class="btn btn-success btn-sm fw-bold shadow-sm" onclick="completeBulk()">
                     ✅ 체크된 항목 일괄 완료
                 </button>
@@ -97,7 +100,7 @@
             <table class="table table-hover align-middle mb-0">
                 <thead class="table-light text-center">
                     <tr>
-                        <th style="width: 50px;">선택</th>
+                        <th style="width: 50px;"><input type="checkbox" class="form-check-input" onchange="toggleAllChecks(this)"></th>
                         <th>품목명 (SKU)</th>
                         <th>총 작업 건수</th>
                         <th>총 요청 수량</th>
@@ -174,7 +177,7 @@
                                                 
                                                 <td>
                                                     <div class="d-flex justify-content-center align-items-center gap-1">
-                                                        <button class="btn btn-sm btn-outline-primary" onclick="openEditModal({{ line.id }}, {{ line.fulfilled_quantity }}, '{{ line.header.memo|default:''|escapejs }}', '{{ line.production_facility }}')">✏️</button>
+                                                        <button class="btn btn-sm btn-outline-primary" onclick="openEditModal({{ line.id }}, {{ line.fulfilled_quantity }}, '{{ line.header.memo|default:''|escapejs }}', '{{ line.production_facility }}', '{{ line.header.requested_delivery_date|date:'Y-m-d' }}')">✏️</button>
                                                         {% if line.status != 'COMPLETED' %}
                                                             <button class="btn btn-sm btn-outline-success" onclick="completeLine({{ line.id }})">OK</button>
                                                         {% else %}
@@ -210,6 +213,10 @@
                 <input type="hidden" id="edit-line-id">
                 <div class="p-3 mb-3 bg-white border rounded">
                     <h6 class="fw-bold border-bottom pb-2 mb-3">🛠️ 내용 수정</h6>
+                    <div class="mb-3">
+                        <label class="form-label small text-muted">납기일</label>
+                        <input type="date" class="form-control" id="edit-delivery-date">
+                    </div>
                     <div class="row g-2 mb-3">
                         <div class="col-6">
                             <label class="form-label small text-muted">완료 수량</label>
@@ -242,29 +249,102 @@
     </div>
 </div>
 
+<div class="modal fade" id="bulkEditModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">✏️ 체크된 항목 일괄 수정</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p><span id="bulk-edit-count" class="fw-bold">0</span>개의 항목이 선택되었습니다.</p>
+                <div class="mb-3">
+                    <label for="bulk-delivery-date" class="form-label">납기일 변경 (비워두면 변경 안함)</label>
+                    <input type="date" class="form-control" id="bulk-delivery-date">
+                </div>
+                <div class="mb-3">
+                    <label for="bulk-facility" class="form-label">생산동 변경 (비워두면 변경 안함)</label>
+                    <select class="form-select" id="bulk-facility">
+                        <option value="">-- 생산동 선택 --</option>
+                        {% for fac in facility_list %}
+                            <option value="{{ fac }}">{{ fac }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                <button type="button" class="btn btn-primary" onclick="submitBulkEdit()">일괄 저장</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 <script>
     function getCsrfToken() { const tokenInput = document.querySelector('[name=csrfmiddlewaretoken]'); return tokenInput ? tokenInput.value : ''; }
     function toggleGroupChecks(source, groupClass) { document.querySelectorAll('.' + groupClass + ' .line-check:not([disabled])').forEach(cb => cb.checked = source.checked); }
+    function toggleAllChecks(source) { document.querySelectorAll('.line-check:not([disabled])').forEach(cb => cb.checked = source.checked); }
+
+    const axiosConfig = { headers: { 'X-CSRFToken': getCsrfToken() } };
     
     async function completeLine(lineId) {
         const qty = document.getElementById('qty-' + lineId).value;
         if (!confirm(`수량 ${qty}개로 완료하시겠습니까?`)) return;
-        try { await axios.post(`/api/production/line/${lineId}/complete/`, { quantity: qty }, { headers: { 'X-CSRFToken': getCsrfToken() } }); location.reload(); } catch (err) { alert("오류 발생"); }
+        try { await axios.post(`/production/line/${lineId}/complete/`, { quantity: qty }, axiosConfig); location.reload(); } catch (err) { alert("오류 발생"); }
     }
     
     async function completeBulk() {
         const ids = Array.from(document.querySelectorAll('.line-check:checked')).map(cb => parseInt(cb.value));
         if (ids.length === 0 || !confirm(`${ids.length}건 일괄 완료하시겠습니까?`)) return;
-        try { await axios.post('/api/production/lines/bulk_complete/', { ids: ids }, { headers: { 'X-CSRFToken': getCsrfToken() } }); location.reload(); } catch (err) { alert("오류 발생"); }
+        try { await axios.post('/production/lines/bulk_complete/', { ids: ids }, axiosConfig); location.reload(); } catch (err) { alert("오류 발생"); }
     }
 
     const editModal = new bootstrap.Modal(document.getElementById('editModal'));
+    const bulkEditModal = new bootstrap.Modal(document.getElementById('bulkEditModal'));
 
-    async function openEditModal(lineId, currentQty, currentMemo, currentFacility) {
+    function openBulkEditModal() {
+        const selectedIds = Array.from(document.querySelectorAll('.line-check:checked')).map(cb => cb.value);
+        if (selectedIds.length === 0) {
+            alert('수정할 항목을 먼저 선택해주세요.');
+            return;
+        }
+        document.getElementById('bulk-edit-count').textContent = selectedIds.length;
+        document.getElementById('bulk-delivery-date').value = '';
+        document.getElementById('bulk-facility').value = '';
+        bulkEditModal.show();
+    }
+
+    async function submitBulkEdit() {
+        const ids = Array.from(document.querySelectorAll('.line-check:checked')).map(cb => parseInt(cb.value));
+        const delivery_date = document.getElementById('bulk-delivery-date').value;
+        const production_facility = document.getElementById('bulk-facility').value;
+
+        if (!delivery_date && !production_facility) {
+            alert('변경할 납기일 또는 생산동을 입력해주세요.');
+            return;
+        }
+        
+        if (!confirm(`${ids.length}개 항목을 수정하시겠습니까?`)) return;
+
+        const payload = { ids };
+        if (delivery_date) payload.delivery_date = delivery_date;
+        if (production_facility) payload.production_facility = production_facility;
+        
+        try {
+            await axios.post('/production/lines/bulk-update/', payload, axiosConfig);
+            location.reload();
+        } catch (err) {
+            alert("오류: " + (err.response?.data?.error || "일괄 수정 중 알 수 없는 오류가 발생했습니다."));
+        }
+    }
+
+    async function openEditModal(lineId, currentQty, currentMemo, currentFacility, deliveryDate) {
         document.getElementById('edit-line-id').value = lineId;
+        document.getElementById('edit-delivery-date').value = deliveryDate;
         document.getElementById('edit-qty').value = currentQty;
         document.getElementById('edit-memo').value = currentMemo;
         document.getElementById('edit-facility').value = currentFacility;
@@ -274,7 +354,7 @@
         logList.innerHTML = '<li class="list-group-item bg-transparent text-center text-muted">로딩중...</li>';
         
         try {
-            const res = await axios.get(`/api/production/line/${lineId}/logs/`);
+            const res = await axios.get(`/production/line/${lineId}/logs/`);
             if (res.data.length === 0) logList.innerHTML = '<li class="list-group-item text-center text-muted">이력 없음</li>';
             else logList.innerHTML = res.data.map(log => `<li class="list-group-item bg-transparent px-0 py-2"><strong>${log.change_type}</strong> <span class="text-muted small">${log.created_at_fmt}</span><br>${log.description}</li>`).join('');
         } catch (err) { logList.innerHTML = '<li class="text-danger text-center">조회 실패</li>'; }
@@ -282,11 +362,14 @@
 
     async function submitEdit() {
         if (!confirm("저장하시겠습니까?")) return;
+        const payload = {
+            fulfilled_quantity: document.getElementById('edit-qty').value,
+            memo: document.getElementById('edit-memo').value,
+            production_facility: document.getElementById('edit-facility').value,
+            delivery_date: document.getElementById('edit-delivery-date').value
+        };
         try { 
-            await axios.post(`/api/production/line/${document.getElementById('edit-line-id').value}/update/`, 
-                { fulfilled_quantity: document.getElementById('edit-qty').value, memo: document.getElementById('edit-memo').value, production_facility: document.getElementById('edit-facility').value }, 
-                { headers: { 'X-CSRFToken': getCsrfToken() } }
-            ); 
+            await axios.post(`/production/line/${document.getElementById('edit-line-id').value}/update/`, payload, axiosConfig); 
             location.reload(); 
         } catch (err) { alert("오류 발생"); }
     }

@@ -82,10 +82,12 @@
                             </tbody>
                         </table>
                     </div>
-                    {% if order.total_status == '대기' %}
+                    {% if order.total_status != '완료' %}
                     <div class="d-flex justify-content-end mt-3">
                         <a href="{% url 'order-edit' order.id %}" class="btn btn-sm btn-outline-primary me-2">수정</a>
+                        {% if order.total_status == '대기' %}
                         <button class="btn btn-sm btn-outline-danger" onclick="cancelOrder({{ order.id }})">주문 취소</button>
+                        {% endif %}
                     </div>
                     {% endif %}
                 </div>

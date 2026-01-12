@@ -58,21 +58,28 @@
                                     <table class="table table-bordered table-sm text-center small mb-3">
                                         <thead class="table-light">
                                             <tr>
-                                                <th style="width: 50%;">A열 (필수)</th>
-                                                <th style="width: 50%;">B열 (선택)</th>
+                                                <th style="width: 40%;">A열 (필수)</th>
+                                                <th style="width: 40%;">B열 (선택)</th>
+                                                <th style="width: 20%;">C열 (선택)</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             <tr class="fw-bold">
                                                 <td>거래처명</td>
                                                 <td>사업자번호</td>
+                                                <td>활성여부</td>
                                             </tr>
                                             <tr class="text-muted">
                                                 <td>(예) 김밥천국 본점</td>
                                                 <td>123-45-67890</td>
+                                                <td>FALSE</td>
                                             </tr>
                                         </tbody>
                                     </table>
+                                    <div class="alert alert-info small py-2 mb-3">
+                                        ※ <strong>활성여부(C열)</strong>: <code>FALSE</code> 입력 시 '비활성' 처리됩니다. <br>
+                                        &nbsp;&nbsp;&nbsp;셀을 비워두거나 다른 값을 입력하면 '활성' 상태로 생성 또는 업데이트됩니다.
+                                    </div>
 
                                     <form method="post" enctype="multipart/form-data" class="input-group">
                                         {% csrf_token %}

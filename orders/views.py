@@ -12,7 +12,7 @@ from collections import defaultdict
 from django.db.models import Q
 from .models import OrderHeader, OrderLine, FACILITY_LIST, OrderLog
 from masters.models import Customer, Product, SalesFavoriteProduct
-from users.permissions import SalesRequiredMixin
+from users.permissions import SalesRequiredMixin, is_in_role
 
 # 1. 발주 작성 화면
 class OrderFormView(LoginRequiredMixin, TemplateView):
@@ -22,7 +22,8 @@ class OrderFormView(LoginRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context['customers'] = Customer.objects.filter(is_active=True)
         context['facility_list'] = FACILITY_LIST
-        context['is_staff'] = self.request.user.is_staff
+        is_privileged = self.request.user.is_staff or is_in_role(self.request.user, '관리자')
+        context['is_privileged_user'] = is_privileged
         return context
 
 # 1.1. 발주 수정 화면
@@ -51,8 +52,17 @@ class OrderCreateView(LoginRequiredMixin, View):
             memo = data.get('memo')
             items = data.get('items', [])
 
+            print("--- DEBUGGING ORDER CREATE ---")
+            print(f"User: {request.user.username}")
+            print(f"User is_staff: {request.user.is_staff}")
+            user_roles = list(request.user.user_roles.values_list('role__name', flat=True))
+            print(f"User roles: {user_roles}")
+            is_admin_role = is_in_role(request.user, '관리자')
+            print(f"is_in_role('관리자'): {is_admin_role}")
+            print("--- END DEBUGGING ---")
+
             # 15시 마감 체크 로직 (관리자는 제외)
-            if not request.user.is_staff:
+            if not (request.user.is_staff or is_in_role(request.user, '관리자')):
                 now = timezone.localtime() 
                 if now.hour >= 15:
                     tomorrow = (now + timedelta(days=1)).strftime('%Y-%m-%d')
@@ -101,17 +111,31 @@ class OrderUpdateView(LoginRequiredMixin, View):
     def post(self, request, order_id):
         try:
             order = get_object_or_404(OrderHeader.objects.prefetch_related('lines', 'lines__product'), id=order_id, created_by=request.user)
-            if order.total_status != '대기':
-                return JsonResponse({'error': '대기 상태인 주문만 수정할 수 있습니다.'}, status=400)
+            if order.total_status == '완료':
+                return JsonResponse({'error': '완료된 주문은 수정할 수 없습니다.'}, status=400)
 
             data = json.loads(request.body)
             new_items_map = {int(item['line_id']): int(item['quantity']) for item in data.get('items', [])}
             
-            # 헤더 정보 업데이트
-            order.requested_delivery_date = data.get('delivery_date', order.requested_delivery_date)
-            order.memo = data.get('memo', order.memo)
-            order.save()
+            has_changes = False
+
+            # 헤더 정보 변경 감지
+            new_delivery_date_str = data.get('delivery_date')
+            if new_delivery_date_str:
+                from datetime import datetime
+                new_delivery_date = datetime.strptime(new_delivery_date_str, '%Y-%m-%d').date()
+                if new_delivery_date != order.requested_delivery_date:
+                    has_changes = True
+                    order.requested_delivery_date = new_delivery_date
+
+            new_memo = data.get('memo', order.memo)
+            if new_memo != order.memo:
+                has_changes = True
+                order.memo = new_memo
             
+            if has_changes: # 변경이 있을 경우에만 저장
+                order.save()
+
             existing_lines = order.lines.all()
             logs_to_create = []
 
@@ -130,6 +154,9 @@ class OrderUpdateView(LoginRequiredMixin, View):
             
             if logs_to_create:
                 OrderLog.objects.bulk_create(logs_to_create)
+                has_changes = True # 수량 변경도 변경사항임
+
+            if has_changes:
                 return JsonResponse({'message': '주문이 성공적으로 수정되었습니다.'})
             else:
                 return JsonResponse({'message': '변경 사항이 없어 수정되지 않았습니다.'})
@@ -203,8 +230,17 @@ class SalesOrderCreateView(LoginRequiredMixin, SalesRequiredMixin, View):
             if not items:
                 return JsonResponse({'error': '발주할 품목이 없습니다.'}, status=400)
 
+            print("--- DEBUGGING SALES ORDER CREATE ---")
+            print(f"User: {request.user.username}")
+            print(f"User is_staff: {request.user.is_staff}")
+            user_roles = list(request.user.user_roles.values_list('role__name', flat=True))
+            print(f"User roles: {user_roles}")
+            is_admin_role = is_in_role(request.user, '관리자')
+            print(f"is_in_role('관리자'): {is_admin_role}")
+            print("--- END DEBUGGING ---")
+
             # 15시 마감 체크 (관리자는 제외)
-            if not request.user.is_staff:
+            if not (request.user.is_staff or is_in_role(request.user, '관리자')):
                 now = timezone.localtime()
                 if now.hour >= 15:
                     tomorrow = (now + timedelta(days=1)).strftime('%Y-%m-%d')

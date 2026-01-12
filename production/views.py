@@ -207,10 +207,17 @@ class ProductionStatusView(LoginRequiredMixin, TemplateView):
         if date and date != 'ALL':
             lines = lines.filter(header__requested_delivery_date=date)
 
-        facility = self.request.GET.get('facility', '')
-        if facility and facility != 'ALL':
-            lines = lines.filter(production_facility=facility)
+        
 
+        facility = self.request.GET.get('facility', '')
+
+        if facility and facility != 'ALL':
+
+            # 'A동'으로 필터링 시 'A'와 'A동' 모두 포함하도록 startswith 사용
+
+            facility_prefix = facility.removesuffix('동')
+
+            lines = lines.filter(production_facility__startswith=facility_prefix)
         grouped_data = {}
         for line in lines:
             pid = line.product.id
@@ -287,50 +294,113 @@ class OrderLineBulkCompleteView(APIView):
             line.save()
             
         return Response({"message": f"{len(lines)}건 처리 완료"}, status=status.HTTP_200_OK)
+
+class OrderLineBulkUpdateView(APIView):
+    permission_classes = [permissions.IsAuthenticated, IsProductionTeam]
+
+    def post(self, request, *args, **kwargs):
+        data = request.data
+        line_ids = data.get('ids', [])
+        new_delivery_date = data.get('delivery_date')
+        new_facility = data.get('production_facility')
+
+        if not line_ids:
+            return Response({"error": "선택된 항목이 없습니다."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not new_delivery_date and not new_facility:
+            return Response({"error": "변경할 내용이 없습니다."}, status=status.HTTP_400_BAD_REQUEST)
+
+        lines_to_update = OrderLine.objects.filter(id__in=line_ids)
+
+        with transaction.atomic():
+            log_entries = []
+            
+            # 1. 생산동 변경 (OrderLine)
+            if new_facility:
+                for line in lines_to_update:
+                    if line.production_facility != new_facility:
+                        log_entries.append(OrderLog(
+                            line=line, editor=request.user, change_type="일괄 생산동 변경",
+                            description=f"{line.production_facility} -> {new_facility}"
+                        ))
+                lines_to_update.update(production_facility=new_facility)
+
+            # 2. 납기일 변경 (OrderHeader)
+            if new_delivery_date:
+                header_ids = lines_to_update.values_list('header_id', flat=True).distinct()
+                headers = OrderHeader.objects.filter(id__in=header_ids)
+                
+                for header in headers:
+                    if str(header.requested_delivery_date) != new_delivery_date:
+                        # 헤더에 속한 모든 라인에 로그 남기기
+                        for line in header.lines.filter(id__in=line_ids):
+                             log_entries.append(OrderLog(
+                                line=line, editor=request.user, change_type="일괄 납기일 변경",
+                                description=f"{header.requested_delivery_date} -> {new_delivery_date}"
+                            ))
+                headers.update(requested_delivery_date=new_delivery_date)
+            
+            if log_entries:
+                OrderLog.objects.bulk_create(log_entries)
+
+        return Response({"message": f"{len(line_ids)}개 품목이 수정되었습니다."}, status=status.HTTP_200_OK)
+
     
 class OrderLineUpdateView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsProductionTeam]
     
     def post(self, request, pk):
-        line = get_object_or_404(OrderLine, pk=pk)
+        line = get_object_or_404(OrderLine.objects.select_related('header'), pk=pk)
         
         new_qty = request.data.get('fulfilled_quantity')
         new_memo = request.data.get('memo')
         new_facility = request.data.get('production_facility')
+        new_delivery_date = request.data.get('delivery_date')
 
-        if new_qty is not None:
-            new_qty = int(new_qty)
-            if line.fulfilled_quantity != new_qty:
+        with transaction.atomic():
+            if new_qty is not None:
+                new_qty = int(new_qty)
+                if line.fulfilled_quantity != new_qty:
+                    OrderLog.objects.create(
+                        line=line,
+                        editor=request.user,
+                        change_type="수량 수정",
+                        description=f"{line.fulfilled_quantity}개 → {new_qty}개"
+                    )
+                    line.fulfilled_quantity = new_qty
+                
+            if new_memo is not None:
+                old_memo = line.header.memo or ""
+                if old_memo != new_memo:
+                    OrderLog.objects.create(
+                        line=line,
+                        editor=request.user,
+                        change_type="메모 수정",
+                        description="발주 메모 내용 변경됨"
+                    )
+                    line.header.memo = new_memo
+                    line.header.save()
+
+            if new_facility and line.production_facility != new_facility:
                 OrderLog.objects.create(
                     line=line,
                     editor=request.user,
-                    change_type="수량 수정",
-                    description=f"{line.fulfilled_quantity}개 → {new_qty}개"
+                    change_type="생산동 변경",
+                    description=f"{line.production_facility} → {new_facility}"
                 )
-                line.fulfilled_quantity = new_qty
-            
-        if new_memo is not None:
-            old_memo = line.header.memo or ""
-            if old_memo != new_memo:
+                line.production_facility = new_facility
+
+            if new_delivery_date and str(line.header.requested_delivery_date) != new_delivery_date:
                 OrderLog.objects.create(
                     line=line,
                     editor=request.user,
-                    change_type="메모 수정",
-                    description="발주 메모 내용 변경됨"
+                    change_type="납기일 변경",
+                    description=f"{line.header.requested_delivery_date} -> {new_delivery_date}"
                 )
-                line.header.memo = new_memo
+                line.header.requested_delivery_date = new_delivery_date
                 line.header.save()
-
-        if new_facility and line.production_facility != new_facility:
-            OrderLog.objects.create(
-                line=line,
-                editor=request.user,
-                change_type="생산동 변경",
-                description=f"{line.production_facility} → {new_facility}"
-            )
-            line.production_facility = new_facility
-            
-        line.save()
+                
+            line.save()
         return Response({"message": "수정되었습니다."}, status=status.HTTP_200_OK)
 
 class LogSerializer(serializers.ModelSerializer):

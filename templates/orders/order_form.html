@@ -88,7 +88,7 @@
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/i18n/ko.js"></script>
 
 <script>
-    const IS_STAFF = {{ is_staff|yesno:"true,false" }};
+    const IS_PRIVILEGED = {{ is_privileged_user|yesno:"true,false" }};
     const csrftoken = getCookie('csrftoken');
 
     function getCookie(name) {
@@ -166,7 +166,7 @@
         const dateInput = document.getElementById('delivery_date');
         const warning = document.getElementById('date-warning');
 
-        if (IS_STAFF) {
+        if (IS_PRIVILEGED) {
             warning.style.display = 'none';
             let today = new Date();
             const yyyy = today.getFullYear();

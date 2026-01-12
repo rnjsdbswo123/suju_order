@@ -19,7 +19,7 @@ COPY . /app/
 # 6. 정적 파일 모으기 (이미지 만들 때 실행)
 RUN python manage.py collectstatic --noinput
 
-# 7. 서버 실행 명령어 (8000번 포트)
+# 7. 서버 실행 명령어 (8009번 포트)
 # 주의: 'config.wsgi:application' 부분의 config는 
 # settings.py가 들어있는 폴더 이름으로 바꿔주세요!
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "SujuOrderSystem.wsgi:application"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8009", "SujuOrderSystem.wsgi:application"]

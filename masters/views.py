@@ -41,43 +41,164 @@ class DataUploadView(LoginRequiredMixin, TemplateView):
             messages.error(request, f"업로드 중 오류 발생: {str(e)}")
         return redirect('data-upload')
 
+    @transaction.atomic
     def upload_customers(self, file):
         wb = openpyxl.load_workbook(file)
         ws = wb.active
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            if not row or not row[0]: continue
-            name = row[0]
-            biz_id = row[1] if len(row) > 1 else None
-            Customer.objects.get_or_create(name=name, defaults={'business_id': biz_id})
 
+        customers_data = {}
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if not row or not row[0]:
+                continue
+            
+            name = row[0].strip()
+            if not name:
+                continue
+
+            biz_id = row[1] if len(row) > 1 and row[1] else None
+            
+            is_active = None
+            if len(row) > 2:
+                excel_val = row[2]
+                if excel_val is False or (isinstance(excel_val, str) and excel_val.strip().upper() == 'FALSE'):
+                    is_active = False
+                elif excel_val is not None:
+                    is_active = True
+            
+            customers_data[name] = {'business_id': biz_id, 'is_active': is_active}
+
+        existing_customers = Customer.objects.filter(name__in=customers_data.keys())
+        existing_customers_map = {c.name: c for c in existing_customers}
+
+        customers_to_create = []
+        customers_to_update = []
+        update_fields = set()
+
+        for name, data in customers_data.items():
+            biz_id = data['business_id']
+            is_active = data['is_active']
+
+            if name in existing_customers_map:
+                customer = existing_customers_map[name]
+                
+                # Check for updates
+                should_update = False
+                if biz_id is not None and customer.business_id != biz_id:
+                    customer.business_id = biz_id
+                    should_update = True
+                    update_fields.add('business_id')
+
+                if is_active is not None and customer.is_active != is_active:
+                    customer.is_active = is_active
+                    should_update = True
+                    update_fields.add('is_active')
+                
+                if should_update:
+                    customers_to_update.append(customer)
+            else:
+                customers_to_create.append(Customer(name=name, business_id=biz_id, is_active=is_active if is_active is not None else True))
+        
+        if customers_to_create:
+            Customer.objects.bulk_create(customers_to_create)
+        
+        if customers_to_update:
+            Customer.objects.bulk_update(customers_to_update, list(update_fields))
+
+    @transaction.atomic
     def upload_products(self, file):
         wb = openpyxl.load_workbook(file)
         ws = wb.active
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            if not row or len(row) < 2 or not row[1]: continue
-            name, sku = row[0], row[1]
-            price = row[2] if len(row) > 2 else 0
-            facility = row[3] if len(row) > 3 else 'A동'
-            
-            if price is None: price = 0
-            
-            Product.objects.update_or_create(
-                sku=sku,
-                defaults={'name': name, 'unit_price': price, 'production_facility': facility}
-            )
 
+        products_data = {}
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if not row or len(row) < 2 or not row[1]:
+                continue
+            
+            sku = row[1].strip()
+            if not sku:
+                continue
+
+            name = row[0] if row[0] else ''
+            price = row[2] if len(row) > 2 and row[2] is not None else 0
+            facility = row[3] if len(row) > 3 and row[3] else 'A동'
+            
+            products_data[sku] = {'name': name, 'unit_price': price, 'production_facility': facility}
+
+        existing_products = Product.objects.filter(sku__in=products_data.keys())
+        existing_products_map = {p.sku: p for p in existing_products}
+
+        products_to_create = []
+        products_to_update = []
+        update_fields = {'name', 'unit_price', 'production_facility'}
+
+        for sku, data in products_data.items():
+            if sku in existing_products_map:
+                product = existing_products_map[sku]
+                
+                # Check for updates
+                if (product.name != data['name'] or 
+                        product.unit_price != data['unit_price'] or
+                        product.production_facility != data['production_facility']):
+                    
+                    product.name = data['name']
+                    product.unit_price = data['unit_price']
+                    product.production_facility = data['production_facility']
+                    products_to_update.append(product)
+            else:
+                products_to_create.append(Product(
+                    sku=sku,
+                    name=data['name'],
+                    unit_price=data['unit_price'],
+                    production_facility=data['production_facility']
+                ))
+        
+        if products_to_create:
+            Product.objects.bulk_create(products_to_create)
+        
+        if products_to_update:
+            Product.objects.bulk_update(products_to_update, list(update_fields))
+
+    @transaction.atomic
     def upload_mappings(self, file):
         wb = openpyxl.load_workbook(file)
         ws = wb.active
+
+        mappings_to_process = set()
+        customer_names = set()
+        product_skus = set()
+
         for row in ws.iter_rows(min_row=2, values_only=True):
-            if not row or len(row) < 2: continue
-            c_name, p_sku = row[0], row[1]
-            try:
-                customer = Customer.objects.get(name=c_name)
-                product = Product.objects.get(sku=p_sku)
-                CustomerProductMap.objects.get_or_create(customer=customer, product=product)
-            except:
-                pass
+            if not row or len(row) < 2 or not row[0] or not row[1]:
+                continue
+            
+            c_name = row[0].strip()
+            p_sku = row[1].strip()
+
+            if c_name and p_sku:
+                mappings_to_process.add((c_name, p_sku))
+                customer_names.add(c_name)
+                product_skus.add(p_sku)
+
+        # 한 번의 쿼리로 필요한 모든 고객과 제품을 가져옵니다.
+        customers = Customer.objects.filter(name__in=customer_names)
+        products = Product.objects.filter(sku__in=product_skus)
+
+        # 빠른 조회를 위해 딕셔너리로 변환합니다.
+        customer_map = {c.name: c.id for c in customers}
+        product_map = {p.sku: p.id for p in products}
+
+        mappings_to_create = []
+        for c_name, p_sku in mappings_to_process:
+            customer_id = customer_map.get(c_name)
+            product_id = product_map.get(p_sku)
+
+            if customer_id and product_id:
+                mappings_to_create.append(
+                    CustomerProductMap(customer_id=customer_id, product_id=product_id)
+                )
+        
+        if mappings_to_create:
+            CustomerProductMap.objects.bulk_create(mappings_to_create, ignore_conflicts=True)
 
 # ==========================================
 # 2. [화면] 거래처-품목 매핑 직접 관리
@@ -245,6 +366,7 @@ class ProductFacilityManageView(LoginRequiredMixin, View):
         }
         return render(request, self.template_name, context)
 
+    @transaction.atomic
     def post(self, request, *args, **kwargs):
         # 엑셀 파일 업로드 처리
         if 'facility_file' in request.FILES:
@@ -252,38 +374,56 @@ class ProductFacilityManageView(LoginRequiredMixin, View):
                 file = request.FILES['facility_file']
                 wb = openpyxl.load_workbook(file)
                 ws = wb.active
-                updated_count = 0
+                
+                facility_data = {}
                 for row in ws.iter_rows(min_row=2, values_only=True):
-                    if not row or len(row) < 2 or not row[0]: continue
-                    sku, facility = row[0], row[1]
-                    try:
-                        product = Product.objects.get(sku=sku)
-                        if product.production_facility != facility:
-                            product.production_facility = facility
-                            product.save(update_fields=['production_facility'])
-                            updated_count += 1
-                    except Product.DoesNotExist:
+                    if not row or len(row) < 2 or not row[0]:
                         continue
-                messages.success(request, f"{updated_count}개 품목의 생산동 정보가 엑셀로 업데이트되었습니다.")
+                    sku = str(row[0]).strip()
+                    facility = str(row[1]).strip()
+                    if sku:
+                        facility_data[sku] = facility
+
+                products_to_update = []
+                # 파일에 있는 SKU에 해당하는 모든 제품을 한 번에 가져옵니다.
+                products = Product.objects.filter(sku__in=facility_data.keys())
+
+                for product in products:
+                    new_facility = facility_data.get(product.sku)
+                    # 생산동 정보가 변경된 경우에만 업데이트 목록에 추가합니다.
+                    if new_facility is not None and product.production_facility != new_facility:
+                        product.production_facility = new_facility
+                        products_to_update.append(product)
+                
+                if products_to_update:
+                    Product.objects.bulk_update(products_to_update, ['production_facility'])
+                    messages.success(request, f"{len(products_to_update)}개 품목의 생산동 정보가 엑셀로 업데이트되었습니다.")
+                else:
+                    messages.info(request, "업데이트할 내용이 없습니다.")
+
             except Exception as e:
                 messages.error(request, f"엑셀 처리 중 오류 발생: {e}")
 
         # 개별 업데이트 처리
         elif 'update_individual' in request.POST:
             product_ids = request.POST.getlist('product_id')
-            updated_count = 0
+            products_to_update = []
+            
+            # 개별 업데이트 대상 제품들을 한 번에 가져옵니다.
+            products = Product.objects.in_bulk(product_ids)
+            
             for pid in product_ids:
-                try:
-                    product = Product.objects.get(id=pid)
+                product = products.get(int(pid))
+                if product:
                     new_facility = request.POST.get(f'production_facility_{pid}')
                     if product.production_facility != new_facility:
                         product.production_facility = new_facility
-                        product.save(update_fields=['production_facility'])
-                        updated_count += 1
-                except Product.DoesNotExist:
-                    continue
-            messages.success(request, f"{updated_count}개 품목의 생산동 정보가 업데이트되었습니다.")
+                        products_to_update.append(product)
             
+            if products_to_update:
+                Product.objects.bulk_update(products_to_update, ['production_facility'])
+                messages.success(request, f"{len(products_to_update)}개 품목의 생산동 정보가 업데이트되었습니다.")
+
         return redirect('product-facility-manage')
 
 # ==========================================

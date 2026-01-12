@@ -3,6 +3,7 @@ from .views import (
     ProductionStatusView, 
     OrderLineCompleteView, 
     OrderLineBulkCompleteView, 
+    OrderLineBulkUpdateView,
     OrderLineUpdateView, 
     OrderLineLogListView,
     MaterialOrderRequestView,
@@ -18,6 +19,7 @@ urlpatterns = [
     path('status/', ProductionStatusView.as_view(), name='production-status-ui'),
     path('line/<int:pk>/complete/', OrderLineCompleteView.as_view(), name='line-complete'),
     path('lines/bulk_complete/', OrderLineBulkCompleteView.as_view(), name='lines-bulk-complete'),
+    path('lines/bulk-update/', OrderLineBulkUpdateView.as_view(), name='lines-bulk-update'),
     path('line/<int:pk>/update/', OrderLineUpdateView.as_view(), name='line-update'),
     path('line/<int:pk>/logs/', OrderLineLogListView.as_view(), name='line-logs'),
 

@@ -63,6 +63,8 @@
     </div>
 </div>
 
+{% endblock %}
+
 {% block scripts %}
 <script>
     const IS_STAFF = {{ is_staff|yesno:"true,false" }};
@@ -113,12 +115,74 @@
             const minDateString = `${yyyy}-${mm}-${dd}`;
             
             dateInput.setAttribute('min', minDateString);
-            dateInput.value = minDateString;
+            if (!dateInput.value) {
+                dateInput.value = minDateString;
+            }
         }
 
         setDeliveryDate();
-		// ... (rest of the script)
-	});
+
+        const submitButton = document.getElementById('submit-sales-order');
+        submitButton.addEventListener('click', function() {
+            const deliveryDate = document.getElementById('delivery-date').value;
+            const memo = document.getElementById('order-memo').value;
+
+            if (!deliveryDate) {
+                alert('납기 요청일을 선택해주세요.');
+                return;
+            }
+
+            const items = [];
+            const rows = document.querySelectorAll('#favorite-products-table tbody tr');
+            rows.forEach(row => {
+                const quantityInput = row.querySelector('.quantity-input');
+                if (quantityInput) {
+                    const quantity = parseInt(quantityInput.value, 10);
+                    if (quantity > 0) {
+                        const productId = row.dataset.productId;
+                        items.push({
+                            product_id: productId,
+                            quantity: quantity
+                        });
+                    }
+                }
+            });
+
+            if (items.length === 0) {
+                alert('1개 이상의 품목에 수량을 입력해주세요.');
+                return;
+            }
+
+            const data = {
+                delivery_date: deliveryDate,
+                memo: memo,
+                items: items
+            };
+
+            const csrftoken = getCookie('csrftoken');
+
+            fetch("{% url 'sales-order-create' %}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('오류: ' + data.error);
+                } else {
+                    alert(data.message);
+                    window.location.href = "{% url 'my-order-list' %}";
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('발주 요청 중 문제가 발생했습니다. 콘솔을 확인해주세요.');
+            });
+        });
+    });
 </script>
-{% endblock %}
 {% endblock %}
