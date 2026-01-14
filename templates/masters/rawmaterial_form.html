@@ -8,7 +8,7 @@
 
     <div class="card shadow-sm">
         <div class="card-body p-4">
-            <form method="post" enctype="multipart/form-data">
+            <form method="post" enctype="multipart/form-data" id="main-form">
                 {% csrf_token %}
 
                 {% if messages %}
@@ -59,13 +59,22 @@
                         활성 상태
                     </label>
                 </div>
+            </form>
 
-
-                <div class="d-grid gap-2 mt-4">
-                    <button type="submit" class="btn btn-primary fw-bold py-2">{% if is_edit_mode %}수정하기{% else %}등록하기{% endif %}</button>
+            <div class="mt-4">
+                <div class="d-flex gap-2">
+                    <button type="submit" form="main-form" class="btn btn-primary fw-bold flex-grow-1 py-2">{% if is_edit_mode %}수정하기{% else %}등록하기{% endif %}</button>
+                    
+                    {% if is_edit_mode %}
+                    <form action="{% url 'rawmaterial-delete' form.instance.pk %}" method="post" onsubmit="return confirm('정말로 이 부자재를 삭제하시겠습니까?');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-danger fw-bold flex-grow-1 py-2">삭제</button>
+                    </form>
+                    {% endif %}
+                    
                     <a href="{% if is_edit_mode %}{% url 'rawmaterial-list' %}{% else %}{% url 'data-upload' %}{% endif %}" class="btn btn-outline-secondary">취소</a>
                 </div>
-            </form>
+            </div>
         </div>
     </div>
 </div>

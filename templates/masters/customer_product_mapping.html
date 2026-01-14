@@ -186,6 +186,21 @@ $(document).ready(function() {
         }
     });
 
+    const preselectedCustomerId = new URLSearchParams(window.location.search).get('customer_id');
+    if (preselectedCustomerId) {
+        $.ajax({
+            url: `/masters/api/customers/${preselectedCustomerId}/detail/`,
+            method: 'GET',
+            success: function(data) {
+                const option = new Option(data.text, data.id, true, true);
+                customerSelect.append(option).trigger('change');
+                currentCustomerId = data.id;
+                mappingUI.show();
+                loadProductsForCustomer(data.id);
+            }
+        });
+    }
+
     // ===================================================================
     // 3. 이벤트 핸들러
     // ===================================================================

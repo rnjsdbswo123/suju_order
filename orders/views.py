@@ -22,7 +22,18 @@ class OrderFormView(LoginRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context['customers'] = Customer.objects.filter(is_active=True)
         context['facility_list'] = FACILITY_LIST
+
+        now = timezone.localtime()
+        if now.hour >= 15:
+            min_date = (now + timedelta(days=1)).strftime('%Y-%m-%d')
+        else:
+            min_date = now.strftime('%Y-%m-%d')
+        
         is_privileged = self.request.user.is_staff or is_in_role(self.request.user, '관리자')
+        if is_privileged:
+            min_date = None # 관리자는 날짜 제한 없음
+
+        context['min_date'] = min_date
         context['is_privileged_user'] = is_privileged
         return context
 
@@ -63,11 +74,10 @@ class OrderCreateView(LoginRequiredMixin, View):
 
             # 15시 마감 체크 로직 (관리자는 제외)
             if not (request.user.is_staff or is_in_role(request.user, '관리자')):
-                now = timezone.localtime() 
-                if now.hour >= 15:
-                    tomorrow = (now + timedelta(days=1)).strftime('%Y-%m-%d')
-                    if delivery_date <= tomorrow:
-                        return JsonResponse({'error': '❌ 15시가 지나 내일 납기는 불가능합니다. 모레부터 선택해주세요.'}, status=400)
+                now = timezone.localtime()
+                today_str = now.strftime('%Y-%m-%d')
+                if now.hour >= 15 and delivery_date <= today_str:
+                    return JsonResponse({'error': '오후 3시가 지났으므로 당일 발주는 불가능합니다. 내일부터 선택해주세요.'}, status=400)
 
             # 품목 정보를 가져와 생산동별로 그룹화
             items_by_facility = defaultdict(list)
@@ -213,10 +223,22 @@ class SalesOrderCreateView(LoginRequiredMixin, SalesRequiredMixin, View):
             user=request.user
         ).select_related('product').order_by('product__name')
         
+        
+        now = timezone.localtime()
+        if now.hour >= 15:
+            min_date = (now + timedelta(days=1)).strftime('%Y-%m-%d')
+        else:
+            min_date = now.strftime('%Y-%m-%d')
+        
+        is_privileged = request.user.is_staff or is_in_role(request.user, '관리자')
+        if is_privileged:
+            min_date = None
+
         context = {
             'page_title': '영업부 발주',
             'favorite_products': favorite_products,
-            'is_staff': request.user.is_staff,
+            'is_staff': is_privileged, # is_staff 대신 is_privileged 사용 가능
+            'min_date': min_date,
         }
         return render(request, self.template_name, context)
 
@@ -242,10 +264,9 @@ class SalesOrderCreateView(LoginRequiredMixin, SalesRequiredMixin, View):
             # 15시 마감 체크 (관리자는 제외)
             if not (request.user.is_staff or is_in_role(request.user, '관리자')):
                 now = timezone.localtime()
-                if now.hour >= 15:
-                    tomorrow = (now + timedelta(days=1)).strftime('%Y-%m-%d')
-                    if delivery_date <= tomorrow:
-                        return JsonResponse({'error': '오후 3시가 지나 내일 납기는 불가능합니다. 모레부터 선택해주세요.'}, status=400)
+                today_str = now.strftime('%Y-%m-%d')
+                if now.hour >= 15 and delivery_date <= today_str:
+                    return JsonResponse({'error': '오후 3시가 지났으므로 당일 발주는 불가능합니다. 내일부터 선택해주세요.'}, status=400)
             
             internal_customer = Customer.objects.get(name='내부 영업팀')
 

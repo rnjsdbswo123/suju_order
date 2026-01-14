@@ -49,6 +49,7 @@
                 <span class="badge text-dark border" style="background-color: #ffe5d0;">🟧 수량 불일치</span>
             </div>
             <div>
+                <button class="btn btn-warning btn-sm fw-bold shadow-sm" onclick="openPendingModal()">미생산 목록</button>
                 <button class="btn btn-info btn-sm fw-bold shadow-sm" onclick="openBulkEditModal()">
                     ✏️ 체크된 항목 일괄 수정
                 </button>
@@ -75,7 +76,7 @@
             <form method="get" action="." class="row g-2 align-items-center">
                 <input type="hidden" name="facility" value="{{ selected_facility }}">
                 
-                <div class="col-auto"><label class="fw-bold">📅 납기일:</label></div>
+                <div class="col-auto"><label class="fw-bold">📅 생산일:</label></div>
                 <div class="col-auto">
                     <input type="date" name="date" class="form-control" value="{% if selected_date != 'ALL' %}{{ selected_date }}{% endif %}">
                 </div>
@@ -139,7 +140,7 @@
                                         <thead class="bg-light">
                                             <tr>
                                                 <th style="width: 50px;">✓</th>
-                                                <th style="width: 120px;">납기일</th>
+                                                <th style="width: 120px;">생산일</th>
                                                 <th>거래처</th> 
                                                 <th style="width: 120px;">요청자(ID)</th> 
                                                 <th>메모</th>
@@ -214,7 +215,7 @@
                 <div class="p-3 mb-3 bg-white border rounded">
                     <h6 class="fw-bold border-bottom pb-2 mb-3">🛠️ 내용 수정</h6>
                     <div class="mb-3">
-                        <label class="form-label small text-muted">납기일</label>
+                        <label class="form-label small text-muted">생산일</label>
                         <input type="date" class="form-control" id="edit-delivery-date">
                     </div>
                     <div class="row g-2 mb-3">
@@ -259,7 +260,7 @@
             <div class="modal-body">
                 <p><span id="bulk-edit-count" class="fw-bold">0</span>개의 항목이 선택되었습니다.</p>
                 <div class="mb-3">
-                    <label for="bulk-delivery-date" class="form-label">납기일 변경 (비워두면 변경 안함)</label>
+                    <label for="bulk-delivery-date" class="form-label">생산일 변경 (비워두면 변경 안함)</label>
                     <input type="date" class="form-control" id="bulk-delivery-date">
                 </div>
                 <div class="mb-3">
@@ -280,6 +281,83 @@
     </div>
 </div>
 
+<div class="modal fade" id="pendingModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">&#48120;&#49373;&#49328; &#47785;&#47197;</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+                    <div>
+                        <label class="form-label small mb-1">&#44592;&#44036; &#54596;&#53552;</label>
+                        <div class="d-flex gap-1 align-items-center">
+                            <input type="date" id="pending-filter-date-from" class="form-control form-control-sm">
+                            <span class="small text-muted">~</span>
+                            <input type="date" id="pending-filter-date-to" class="form-control form-control-sm">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="form-label small mb-1">&#44277;&#51109; &#54596;&#53552;</label>
+                        <select id="pending-filter-facility" class="form-select form-select-sm">
+                            <option value="ALL">&#51204;&#52404;</option>
+                            {% for fac in facility_list %}
+                                <option value="{{ fac }}">{{ fac }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-1">
+                        <button class="btn btn-sm btn-outline-primary" onclick="loadPendingSummary()">&#54596;&#53552; &#51201;&#50857;</button>
+                    </div>
+                </div>
+
+                <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+                    <div>
+                        <label class="form-label small mb-1">&#49440;&#53469; &#54637;&#47785; &#49373;&#49328;&#51068; &#48320;&#44221;</label>
+                        <input type="date" id="pending-bulk-date" class="form-control form-control-sm">
+                    </div>
+                    <div>
+                        <label class="form-label small mb-1">&#49440;&#53469; &#54637;&#47785; &#44277;&#51109; &#48320;&#44221;</label>
+                        <select id="pending-bulk-facility" class="form-select form-select-sm">
+                            <option value="">-- &#44277;&#51109; &#49440;&#53469; --</option>
+                            {% for fac in facility_list %}
+                                <option value="{{ fac }}">{{ fac }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-1">
+                        <button class="btn btn-sm btn-primary" onclick="bulkUpdatePending()">&#49440;&#53469; &#51068;&#44204; &#49688;&#51221;</button>
+                    </div>
+                </div>
+
+                <div id="pending-loading" class="text-center text-muted py-3">&#47196;&#46377;&#51473;...</div>
+                <div id="pending-empty" class="text-center text-muted py-3" style="display: none;">&#48120;&#49373;&#49328; &#45236;&#50669;&#51060; &#50630;&#49845;&#45768;&#45796;.</div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead>
+                            <tr>
+                                <th style="width: 40px;" class="text-center">
+                                    <input type="checkbox" id="pending-check-all" class="form-check-input" onchange="togglePendingAll(this)">
+                                </th>
+                                <th style="width: 120px;">&#49373;&#49328;&#51068;</th>
+                                <th>&#49345;&#54408;</th>
+                                <th style="width: 120px;">&#44277;&#51109;</th>
+                                <th style="width: 110px;" class="text-end">&#49688;&#47049;</th>
+                                <th style="width: 90px;" class="text-center">&#44148;&#49688;</th>
+                                <th style="width: 170px;">&#49373;&#49328;&#51068; &#48320;&#44221;</th>
+                                <th style="width: 90px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="pending-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -294,13 +372,13 @@
     async function completeLine(lineId) {
         const qty = document.getElementById('qty-' + lineId).value;
         if (!confirm(`수량 ${qty}개로 완료하시겠습니까?`)) return;
-        try { await axios.post(`/production/line/${lineId}/complete/`, { quantity: qty }, axiosConfig); location.reload(); } catch (err) { alert("오류 발생"); }
+        try { await axios.post(`../line/${lineId}/complete/`, { quantity: qty }, axiosConfig); location.reload(); } catch (err) { alert("오류 발생"); }
     }
     
     async function completeBulk() {
         const ids = Array.from(document.querySelectorAll('.line-check:checked')).map(cb => parseInt(cb.value));
         if (ids.length === 0 || !confirm(`${ids.length}건 일괄 완료하시겠습니까?`)) return;
-        try { await axios.post('/production/lines/bulk_complete/', { ids: ids }, axiosConfig); location.reload(); } catch (err) { alert("오류 발생"); }
+        try { await axios.post('../lines/bulk_complete/', { ids: ids }, axiosConfig); location.reload(); } catch (err) { alert("오류 발생"); }
     }
 
     const editModal = new bootstrap.Modal(document.getElementById('editModal'));
@@ -324,7 +402,7 @@
         const production_facility = document.getElementById('bulk-facility').value;
 
         if (!delivery_date && !production_facility) {
-            alert('변경할 납기일 또는 생산동을 입력해주세요.');
+            alert('변경할 생산일 또는 생산동을 입력해주세요.');
             return;
         }
         
@@ -335,7 +413,7 @@
         if (production_facility) payload.production_facility = production_facility;
         
         try {
-            await axios.post('/production/lines/bulk-update/', payload, axiosConfig);
+            await axios.post('../lines/bulk-update/', payload, axiosConfig);
             location.reload();
         } catch (err) {
             alert("오류: " + (err.response?.data?.error || "일괄 수정 중 알 수 없는 오류가 발생했습니다."));
@@ -354,7 +432,7 @@
         logList.innerHTML = '<li class="list-group-item bg-transparent text-center text-muted">로딩중...</li>';
         
         try {
-            const res = await axios.get(`/production/line/${lineId}/logs/`);
+            const res = await axios.get(`../line/${lineId}/logs/`);
             if (res.data.length === 0) logList.innerHTML = '<li class="list-group-item text-center text-muted">이력 없음</li>';
             else logList.innerHTML = res.data.map(log => `<li class="list-group-item bg-transparent px-0 py-2"><strong>${log.change_type}</strong> <span class="text-muted small">${log.created_at_fmt}</span><br>${log.description}</li>`).join('');
         } catch (err) { logList.innerHTML = '<li class="text-danger text-center">조회 실패</li>'; }
@@ -369,9 +447,167 @@
             delivery_date: document.getElementById('edit-delivery-date').value
         };
         try { 
-            await axios.post(`/production/line/${document.getElementById('edit-line-id').value}/update/`, payload, axiosConfig); 
+            await axios.post(`../line/${document.getElementById('edit-line-id').value}/update/`, payload, axiosConfig); 
             location.reload(); 
         } catch (err) { alert("오류 발생"); }
     }
+    const pendingModal = new bootstrap.Modal(document.getElementById('pendingModal'));
+    const pendingTableBody = document.getElementById('pending-table-body');
+    const pendingLoading = document.getElementById('pending-loading');
+    const pendingEmpty = document.getElementById('pending-empty');
+    const pendingFilterDateFrom = document.getElementById('pending-filter-date-from');
+    const pendingFilterDateTo = document.getElementById('pending-filter-date-to');
+    const pendingFilterFacility = document.getElementById('pending-filter-facility');
+    const pendingBulkDate = document.getElementById('pending-bulk-date');
+    const pendingBulkFacility = document.getElementById('pending-bulk-facility');
+    const pendingCheckAll = document.getElementById('pending-check-all');
+
+    const defaultPendingDate = "{{ selected_date }}";
+    const defaultPendingFacility = "{{ selected_facility }}";
+
+    function openPendingModal() {
+        if (defaultPendingDate && defaultPendingDate !== 'ALL') {
+            if (pendingFilterDateFrom && !pendingFilterDateFrom.value) {
+                pendingFilterDateFrom.value = defaultPendingDate;
+            }
+            if (pendingFilterDateTo && !pendingFilterDateTo.value) {
+                pendingFilterDateTo.value = defaultPendingDate;
+            }
+        }
+        if (pendingFilterFacility && defaultPendingFacility) {
+            pendingFilterFacility.value = defaultPendingFacility;
+        }
+        pendingModal.show();
+        loadPendingSummary();
+    }
+
+    function togglePendingAll(source) {
+        document.querySelectorAll('.pending-check').forEach(cb => {
+            cb.checked = source.checked;
+        });
+    }
+
+    function getPendingFilterParams() {
+        const params = new URLSearchParams();
+        if (pendingFilterDateFrom && pendingFilterDateFrom.value) {
+            params.set('date_from', pendingFilterDateFrom.value);
+        }
+        if (pendingFilterDateTo && pendingFilterDateTo.value) {
+            params.set('date_to', pendingFilterDateTo.value);
+        }
+        if (pendingFilterFacility && pendingFilterFacility.value && pendingFilterFacility.value !== 'ALL') {
+            params.set('facility', pendingFilterFacility.value);
+        }
+        return params.toString();
+    }
+
+    async function loadPendingSummary() {
+        pendingLoading.style.display = 'block';
+        pendingEmpty.style.display = 'none';
+        pendingTableBody.innerHTML = '';
+        if (pendingCheckAll) pendingCheckAll.checked = false;
+
+        try {
+            const params = getPendingFilterParams();
+            const url = params ? `/production/pending-summary/?${params}` : '/production/pending-summary/';
+            const res = await axios.get(url);
+            const items = res.data.items || [];
+
+            if (items.length === 0) {
+                pendingEmpty.style.display = 'block';
+                return;
+            }
+
+            pendingTableBody.innerHTML = items.map(item => `
+                <tr data-line-ids="${item.line_ids.join(',')}">
+                    <td class="text-center">
+                        <input type="checkbox" class="form-check-input pending-check" data-line-ids="${item.line_ids.join(',')}">
+                    </td>
+                    <td>${item.date}</td>
+                    <td>
+                        <div class="fw-bold">${item.product_name}</div>
+                        <div class="small text-muted">${item.product_sku}</div>
+                    </td>
+                    <td>${item.production_facility || '-'}</td>
+                    <td class="text-end fw-bold">${item.total_qty}</td>
+                    <td class="text-center">${item.line_count}</td>
+                    <td>
+                        <input type="date" class="form-control form-control-sm" value="${item.date}">
+                    </td>
+                    <td class="text-center">
+                        <button class="btn btn-sm btn-outline-primary" onclick="updatePendingDate(this)">수정</button>
+                    </td>
+                </tr>
+            `).join('');
+        } catch (err) {
+            pendingEmpty.textContent = '목록을 불러오지 못했습니다.';
+            pendingEmpty.style.display = 'block';
+        } finally {
+            pendingLoading.style.display = 'none';
+        }
+    }
+
+    async function updatePendingDate(button) {
+        const row = button.closest('tr');
+        const ids = (row.dataset.lineIds || '')
+            .split(',')
+            .filter(Boolean)
+            .map(id => parseInt(id, 10));
+        const input = row.querySelector('input[type="date"]');
+        const newDate = input ? input.value : '';
+
+        if (!newDate || ids.length === 0) {
+            alert('날짜를 선택해 주세요.');
+            return;
+        }
+
+        if (!confirm(`${ids.length}건의 생산일을 ${newDate}로 변경할까요?`)) return;
+
+        try {
+            await axios.post('/production/lines/bulk-update/', { ids: ids, delivery_date: newDate }, axiosConfig);
+            await loadPendingSummary();
+        } catch (err) {
+            alert('수정에 실패했습니다.');
+        }
+    }
+
+    function collectPendingSelectedIds() {
+        return Array.from(document.querySelectorAll('.pending-check:checked'))
+            .flatMap(cb => (cb.dataset.lineIds || '').split(','))
+            .filter(Boolean)
+            .map(id => parseInt(id, 10));
+    }
+
+    async function bulkUpdatePending() {
+        const ids = collectPendingSelectedIds();
+        const deliveryDate = pendingBulkDate ? pendingBulkDate.value : '';
+        const productionFacility = pendingBulkFacility ? pendingBulkFacility.value : '';
+
+        if (ids.length === 0) {
+            alert('수정할 항목을 선택해 주세요.');
+            return;
+        }
+
+        if (!deliveryDate && !productionFacility) {
+            alert('변경할 값을 입력해 주세요.');
+            return;
+        }
+
+        if (!confirm(`${ids.length}건을 일괄 수정할까요?`)) return;
+
+        const payload = { ids };
+        if (deliveryDate) payload.delivery_date = deliveryDate;
+        if (productionFacility) payload.production_facility = productionFacility;
+
+        try {
+            await axios.post('/production/lines/bulk-update/', payload, axiosConfig);
+            await loadPendingSummary();
+        } catch (err) {
+            alert('일괄 수정에 실패했습니다.');
+        }
+    }
+
+    const resetLink = document.querySelector('a[href="?facility=ALL"]');
+    if (resetLink) resetLink.setAttribute('href', '?facility=ALL&date=ALL');
 </script>
 {% endblock scripts %}

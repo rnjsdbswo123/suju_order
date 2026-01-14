@@ -11,6 +11,9 @@ from django.db.models import Q
 import openpyxl
 from SujuOrderSystem.utils import FACILITY_LIST
 from django.core.paginator import Paginator
+from django.views.decorators.http import require_POST
+from django.contrib.auth.decorators import login_required
+from users.permissions import is_in_role
 
 # 모델 가져오기
 from .models import Customer, Product, CustomerProductMap, SalesFavoriteProduct, RawMaterial
@@ -37,9 +40,95 @@ class DataUploadView(LoginRequiredMixin, TemplateView):
             elif 'mapping_file' in request.FILES:
                 self.upload_mappings(request.FILES['mapping_file'])
                 messages.success(request, "매핑 업로드 완료! 🎉")
+
+            elif 'rawmaterial_file' in request.FILES:
+                self.upload_rawmaterials(request.FILES['rawmaterial_file'])
+                messages.success(request, "부자재 업로드 완료! 🎉")
+
         except Exception as e:
             messages.error(request, f"업로드 중 오류 발생: {str(e)}")
         return redirect('data-upload')
+
+    @transaction.atomic
+    def upload_rawmaterials(self, file):
+        wb = openpyxl.load_workbook(file)
+        ws = wb.active
+
+        materials_data = {}
+        # 엑셀 헤더: 부자재명, 부자재코드, 바코드, 단가, 활성여부
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if not row or len(row) < 2 or not row[1]:
+                continue
+            
+            sku = str(row[1]).strip()
+            if not sku:
+                continue
+
+            name = str(row[0]).strip()
+            barcode = str(row[2]).strip() if len(row) > 2 and row[2] else None
+            price = row[3] if len(row) > 3 and row[3] is not None else 0
+
+            is_active = None
+            if len(row) > 4:
+                excel_val = row[4]
+                if excel_val is False or (isinstance(excel_val, str) and excel_val.strip().upper() == 'FALSE'):
+                    is_active = False
+                elif excel_val is not None:
+                    is_active = True
+            
+            materials_data[sku] = {
+                'name': name, 'barcode': barcode, 'unit_price': price, 'is_active': is_active
+            }
+
+        existing_materials = RawMaterial.objects.filter(sku__in=materials_data.keys())
+        existing_materials_map = {m.sku: m for m in existing_materials}
+
+        materials_to_create = []
+        materials_to_update = []
+        update_fields = set()
+
+        for sku, data in materials_data.items():
+            if sku in existing_materials_map:
+                material = existing_materials_map[sku]
+                should_update = False
+                
+                if material.name != data['name']:
+                    material.name = data['name']
+                    should_update = True
+                    update_fields.add('name')
+                
+                if data['barcode'] is not None and material.barcode != data['barcode']:
+                    material.barcode = data['barcode']
+                    should_update = True
+                    update_fields.add('barcode')
+
+                if material.unit_price != data['unit_price']:
+                    material.unit_price = data['unit_price']
+                    should_update = True
+                    update_fields.add('unit_price')
+
+                if data['is_active'] is not None and material.is_active != data['is_active']:
+                    material.is_active = data['is_active']
+                    should_update = True
+                    update_fields.add('is_active')
+                
+                if should_update:
+                    materials_to_update.append(material)
+            else:
+                materials_to_create.append(RawMaterial(
+                    sku=sku,
+                    name=data['name'],
+                    barcode=data['barcode'],
+                    unit_price=data['unit_price'],
+                    is_active=data['is_active'] if data['is_active'] is not None else True
+                ))
+        
+        if materials_to_create:
+            RawMaterial.objects.bulk_create(materials_to_create)
+        
+        if materials_to_update:
+            RawMaterial.objects.bulk_update(materials_to_update, list(update_fields))
+
 
     @transaction.atomic
     def upload_customers(self, file):
@@ -251,6 +340,11 @@ def search_customers(request):
     customers = customers[:20]
     data = [{"id": c.id, "text": c.name} for c in customers]
     return Response({"results": data})
+
+@api_view(['GET'])
+def customer_detail(request, customer_id):
+    customer = get_object_or_404(Customer, id=customer_id)
+    return Response({"id": customer.id, "text": customer.name})
 
 @api_view(['GET'])
 def search_products(request):
@@ -537,3 +631,21 @@ class RawMaterialUpdateView(LoginRequiredMixin, UpdateView):
         context = super().get_context_data(**kwargs)
         context['is_edit_mode'] = True
         return context
+
+@require_POST
+@login_required
+def rawmaterial_delete(request, pk):
+    # '관리자' 또는 '자재담당자' 역할이 있는지 확인
+    if not (is_in_role(request.user, '관리자') or is_in_role(request.user, '자재담당자')):
+        messages.error(request, '삭제 권한이 없습니다.')
+        return redirect('rawmaterial-list')
+
+    material = get_object_or_404(RawMaterial, pk=pk)
+    try:
+        material.delete()
+        messages.success(request, f"부자재 '{material.name}'이(가) 성공적으로 삭제되었습니다.")
+    except Exception as e:
+        # ForeignKey 제약 조건 등 DB 레벨에서 발생하는 예외 처리
+        messages.error(request, f"삭제 중 오류가 발생했습니다: 이 부자재를 사용하고 있는 다른 데이터가 있어 삭제할 수 없습니다.")
+    
+    return redirect('rawmaterial-list')

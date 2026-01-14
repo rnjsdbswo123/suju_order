@@ -1,6 +1,7 @@
 from django.urls import path
 from .views import (
     ProductionStatusView, 
+    pending_production_summary,
     OrderLineCompleteView, 
     OrderLineBulkCompleteView, 
     OrderLineBulkUpdateView,
@@ -17,6 +18,7 @@ app_name = 'production'
 
 urlpatterns = [
     path('status/', ProductionStatusView.as_view(), name='production-status-ui'),
+    path('pending-summary/', pending_production_summary, name='pending-summary'),
     path('line/<int:pk>/complete/', OrderLineCompleteView.as_view(), name='line-complete'),
     path('lines/bulk_complete/', OrderLineBulkCompleteView.as_view(), name='lines-bulk-complete'),
     path('lines/bulk-update/', OrderLineBulkUpdateView.as_view(), name='lines-bulk-update'),

@@ -170,6 +170,55 @@
                                 </div>
                             </div>
                         </div>
+
+                        <div class="col-md-12">
+                            <div class="card shadow-sm border-info border-opacity-25">
+                                <div class="card-header bg-info text-white fw-bold d-flex justify-content-between">
+                                    <span>4. 부자재 등록 (Raw Material)</span>
+                                    <small>Step 4</small>
+                                </div>
+                                <div class="card-body">
+                                    <h6 class="fw-bold text-info mb-2">📊 엑셀 작성 양식</h6>
+                                    <table class="table table-bordered table-sm text-center small mb-3">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>A열 (필수)</th>
+                                                <th>B열 (필수/고유)</th>
+                                                <th>C열 (선택)</th>
+                                                <th>D열 (선택/숫자)</th>
+                                                <th>E열 (선택)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr class="fw-bold">
+                                                <td>부자재명</td>
+                                                <td>부자재코드</td>
+                                                <td>바코드</td>
+                                                <td>단가</td>
+                                                <td>활성여부</td>
+                                            </tr>
+                                            <tr class="text-muted">
+                                                <td>(예) 신선계란 30구</td>
+                                                <td>RM-EG-30</td>
+                                                <td>8801234567890</td>
+                                                <td>4500</td>
+                                                <td>TRUE</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    <div class="alert alert-info small py-2 mb-3">
+                                        ※ <strong>활성여부(E열)</strong>: <code>FALSE</code> 입력 시 '비활성' 처리됩니다. <br>
+                                        &nbsp;&nbsp;&nbsp;셀을 비워두거나 다른 값을 입력하면 '활성' 상태로 생성 또는 업데이트됩니다.
+                                    </div>
+
+                                    <form method="post" enctype="multipart/form-data" class="input-group">
+                                        {% csrf_token %}
+                                        <input type="file" name="rawmaterial_file" class="form-control" required accept=".xlsx, .xls">
+                                        <button class="btn btn-info" type="submit">부자재 업로드</button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

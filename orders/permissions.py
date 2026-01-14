@@ -1,4 +1,5 @@
 from rest_framework import permissions
+from users.permissions import is_in_role
 
 class IsSalesTeam(permissions.BasePermission):
     """ 영업팀 권한 (관리자는 프리패스) """
@@ -30,11 +31,16 @@ class IsSalesTeam(permissions.BasePermission):
         return False
 
 class IsProductionTeam(permissions.BasePermission):
-    """ 생산팀 권한 (관리자는 프리패스) """
-    message = "생산팀 권한이 필요합니다."
+    """ 생산팀 또는 관리자 권한 """
+    message = "생산팀 또는 관리자 권한이 필요합니다."
 
     def has_permission(self, request, view):
-        # 생산팀 로직도 동일하게 디버깅 가능
-        if request.user.is_superuser:
+        user = request.user
+        if not user.is_authenticated:
+            return False
+        
+        # is_staff, '관리자' 역할, '생산팀' 역할 중 하나라도 해당되면 통과
+        if user.is_staff or is_in_role(user, '관리자') or is_in_role(user, '생산팀'):
             return True
-        return request.user.groups.filter(name='생산팀').exists()
+            
+        return False

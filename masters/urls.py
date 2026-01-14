@@ -4,6 +4,7 @@ from .views import (
     CustomerProductMappingView, 
     delete_customer_product, 
     get_products_by_customer,
+    customer_detail,
     search_customers,
     search_products,
     update_customer_products, 
@@ -14,6 +15,7 @@ from .views import (
     RawMaterialCreateView,
     RawMaterialListView,
     RawMaterialUpdateView,
+    rawmaterial_delete,
 )
 
 
@@ -27,6 +29,7 @@ urlpatterns = [
     
     # 3. [API]
     path('api/customers/<int:customer_id>/products/', get_products_by_customer, name='customer-products-api'),
+    path('api/customers/<int:customer_id>/detail/', customer_detail, name='customer-detail-api'),
     path('api/search/customers/', search_customers, name='customer-search-api'),
     path('api/search/products/', search_products, name='product-search-api'),
     path('api/update-customer-products/', update_customer_products, name='update-customer-products-api'),
@@ -37,6 +40,7 @@ urlpatterns = [
     path('rawmaterial/add/', RawMaterialCreateView.as_view(), name='rawmaterial-create'),
     path('rawmaterials/', RawMaterialListView.as_view(), name='rawmaterial-list'),
     path('rawmaterial/<int:pk>/edit/', RawMaterialUpdateView.as_view(), name='rawmaterial-edit'),
+    path('rawmaterial/<int:pk>/delete/', rawmaterial_delete, name='rawmaterial-delete'),
 
     # 5. [화면] 영업사원 선호품목 관리
     path('favorites/', SalesFavoriteProductManageView.as_view(), name='sales-favorite-manage'),

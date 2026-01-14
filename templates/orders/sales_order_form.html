@@ -11,8 +11,8 @@
         <div class="card-body">
             <div class="row">
                 <div class="col-md-6 mb-3">
-                    <label for="delivery-date" class="form-label">납기 요청일</label>
-                    <input type="date" id="delivery-date" class="form-control" required>
+                    <label for="delivery-date" class="form-label">생산일</label>
+                    <input type="date" id="delivery-date" class="form-control" required {% if min_date %}min="{{ min_date }}" value="{{ min_date }}"{% endif %}>
                 </div>
                 <div class="col-md-12 mb-3">
                     <label for="order-memo" class="form-label">메모</label>
@@ -85,50 +85,13 @@
     }
 
     document.addEventListener('DOMContentLoaded', function() {
-    
-        function setDeliveryDate() {
-            const dateInput = document.getElementById('delivery-date');
-            
-            if (IS_STAFF) {
-                let today = new Date();
-                const yyyy = today.getFullYear();
-                const mm = String(today.getMonth() + 1).padStart(2, '0');
-                const dd = String(today.getDate()).padStart(2, '0');
-                dateInput.min = `${yyyy}-${mm}-${dd}`;
-                if (!dateInput.value) { dateInput.value = `${yyyy}-${mm}-${dd}`; }
-                return;
-            }
-
-            const now = new Date();
-            const hour = now.getHours();
-            let minDate = new Date();
-
-            if (hour >= 15) {
-                minDate.setDate(now.getDate() + 2);
-            } else {
-                minDate.setDate(now.getDate() + 1);
-            }
-            
-            const yyyy = minDate.getFullYear();
-            const mm = String(minDate.getMonth() + 1).padStart(2, '0');
-            const dd = String(minDate.getDate()).padStart(2, '0');
-            const minDateString = `${yyyy}-${mm}-${dd}`;
-            
-            dateInput.setAttribute('min', minDateString);
-            if (!dateInput.value) {
-                dateInput.value = minDateString;
-            }
-        }
-
-        setDeliveryDate();
-
         const submitButton = document.getElementById('submit-sales-order');
         submitButton.addEventListener('click', function() {
             const deliveryDate = document.getElementById('delivery-date').value;
             const memo = document.getElementById('order-memo').value;
 
             if (!deliveryDate) {
-                alert('납기 요청일을 선택해주세요.');
+                alert('생산일을 선택해주세요.');
                 return;
             }
 

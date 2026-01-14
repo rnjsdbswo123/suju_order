@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -95,12 +96,26 @@ DATA_DIR.mkdir(exist_ok=True)
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': DATA_DIR / 'db.sqlite3',
+DB_ENGINE = os.environ.get('DB_ENGINE', 'postgresql').lower()
+
+if DB_ENGINE in ('sqlite', 'sqlite3', 'django.db.backends.sqlite3'):
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': DATA_DIR / 'db.sqlite3',
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.environ.get('DB_NAME', 'suju_order'),
+            'USER': os.environ.get('DB_USER', 'suju_user'),
+            'PASSWORD': os.environ.get('DB_PASSWORD', 'suju_pass_2025'),
+            'HOST': os.environ.get('DB_HOST', 'localhost'),
+            'PORT': os.environ.get('DB_PORT', '5432'),
+        }
+    }
 
 
 # Password validation
@@ -170,3 +185,17 @@ LOGIN_REDIRECT_URL = '/users/redirect-on-login/'
 
 # 2. 로그아웃 시 이동할 주소 (다시 로그인 창으로)
 LOGOUT_REDIRECT_URL = '/accounts/login/'
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+}

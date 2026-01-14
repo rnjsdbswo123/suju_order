@@ -19,3 +19,6 @@ __pycache__/
 /raw_materials/
 
 *.tar
+
+# gemini agent related files
+gemini/upload.md

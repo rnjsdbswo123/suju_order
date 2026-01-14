@@ -107,3 +107,29 @@ cd /volume1/docker/suju_order
 
 sudo docker-compose build --no-cache
 sudo docker-compose up --build -d
+
+
+
+
+
+
+  1. 단순 코드 수정 시 (대부분의 경우)
+
+   * views.py, html 파일 등 파이썬 코드만 수정한 경우
+
+   1     # 1. 수정한 코드 파일들을 서버에 업로드 (덮어쓰기)
+   2 
+   3     # 2. 아래 명령어로 앱을 새로 빌드하고 재시작하면 끝입니다.
+   4     sudo docker-compose up --build -d
+
+  2. 데이터베이스 모델 수정 시
+
+   * models.py 파일을 수정하여 테이블 구조를 변경한 경우
+
+   1     # 1. 수정한 코드 파일들을 서버에 업로드
+   2 
+   3     # 2. 앱을 새로 빌드하고 재시작
+   4     sudo docker-compose up --build -d
+   5 
+   6     # 3. 앱 컨테이너 안에서 migrate 명령어 실행 (이것만 추가됩니다)
+   7     sudo docker exec suju_order-app-1 python manage.py migrate

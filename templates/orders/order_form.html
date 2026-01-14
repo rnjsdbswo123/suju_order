@@ -56,9 +56,8 @@
 
             <div class="row mb-4">
                 <div class="col-md-6">
-                    <label class="form-label fw-bold">납기 요청일</label>
-                    <input type="date" id="delivery_date" class="form-control" required>
-                    <small id="date-warning" class="text-danger fw-bold" style="display:none;">※ 15시 마감으로 모레부터 가능</small>
+                    <label class="form-label fw-bold">생산일</label>
+                    <input type="date" id="delivery_date" class="form-control" required {% if min_date %}min="{{ min_date }}" value="{{ min_date }}"{% endif %}>
                 </div>
             </div>
 
@@ -69,6 +68,9 @@
 
             <div class="mb-4">
                 <label class="form-label fw-bold">주문 품목</label>
+                <div class="text-end mb-2">
+                    <a id="mapping-button" href="{% url 'customer-product-manage' %}" class="btn btn-outline-secondary fw-bold px-3 py-2">&#44144;&#47000;&#52376; &#54408;&#47785; &#47588;&#54053;</a>
+                </div>
                 <div id="product-list-area" class="border p-3 rounded bg-light text-center text-muted">
                     거래처를 선택하면 품목 리스트가 여기에 나타납니다.
                 </div>
@@ -90,6 +92,9 @@
 <script>
     const IS_PRIVILEGED = {{ is_privileged_user|yesno:"true,false" }};
     const csrftoken = getCookie('csrftoken');
+    const PRODUCT_ORDER_KEY_PREFIX = 'order-form-product-order:';
+    let currentCustomerId = null;
+    const mappingButton = document.getElementById('mapping-button');
 
     function getCookie(name) {
         let cookieValue = null;
@@ -106,6 +111,17 @@
         return cookieValue;
     }
 
+    function updateMappingButton(customerId) {
+        if (!mappingButton) return;
+        if (customerId) {
+            mappingButton.href = `/masters/mapping/?customer_id=${customerId}`;
+            mappingButton.classList.remove('disabled');
+        } else {
+            mappingButton.href = "{% url 'customer-product-manage' %}";
+            mappingButton.classList.add('disabled');
+        }
+    }
+
     $(document).ready(function() {
         const isEditMode = typeof EDIT_ORDER !== 'undefined' && EDIT_ORDER !== null;
         
@@ -118,6 +134,7 @@
             language: "ko",
             minimumResultsForSearch: 0
         });
+        updateMappingButton($('#customer-select').val());
 
         // 2. 수정 모드 처리
         if (isEditMode) {
@@ -141,9 +158,6 @@
                 });
             });
 
-        } else {
-            // 생성 모드: 15시 마감 로직 체크
-            checkTimeAndSetDate();
         }
         
         // 3. 이벤트 리스너
@@ -151,54 +165,32 @@
             if (!isEditMode) {
                 loadProducts(e.params.data.id);
             }
+            updateMappingButton(e.params.data.id);
+        });
+        $('#customer-select').on('select2:clear', function () {
+            updateMappingButton(null);
         });
 
         $('#orderForm').on('submit', function(e) {
             e.preventDefault();
             submitOrder(isEditMode);
         });
+
+        if (mappingButton) {
+            mappingButton.addEventListener('click', function (e) {
+                const customerId = $('#customer-select').val();
+                if (!customerId) {
+                    e.preventDefault();
+                    alert('거래처를 먼저 선택해 주세요.');
+                }
+            });
+        }
     });
 
-    // 15시 체크 함수
-    function checkTimeAndSetDate() {
-        if (EDIT_ORDER) return; // 수정 모드에서는 날짜를 바꾸지 않음
-        
-        const dateInput = document.getElementById('delivery_date');
-        const warning = document.getElementById('date-warning');
-
-        if (IS_PRIVILEGED) {
-            warning.style.display = 'none';
-            let today = new Date();
-            const yyyy = today.getFullYear();
-            const mm = String(today.getMonth() + 1).padStart(2, '0');
-            const dd = String(today.getDate()).padStart(2, '0');
-            dateInput.min = `${yyyy}-${mm}-${dd}`;
-            if (!dateInput.value) { dateInput.value = `${yyyy}-${mm}-${dd}`; }
-            return;
-        }
-
-        const now = new Date();
-        const hour = now.getHours();
-        let targetDate = new Date();
-        
-        if (hour >= 15) {
-            targetDate.setDate(now.getDate() + 2);
-            warning.style.display = 'block'; 
-        } else {
-            targetDate.setDate(now.getDate() + 1);
-            warning.style.display = 'none';
-        }
-
-        const yyyy = targetDate.getFullYear();
-        const mm = String(targetDate.getMonth() + 1).padStart(2, '0');
-        const dd = String(targetDate.getDate()).padStart(2, '0');
-        const strDate = `${yyyy}-${mm}-${dd}`;
-
-        dateInput.value = strDate;
-        dateInput.min = strDate; 
-    }
 
     function loadProducts(customerId, callback) {
+        currentCustomerId = customerId;
+        updateMappingButton(customerId);
         fetch(`/masters/api/customers/${customerId}/products/`)
         .then(res => res.json())
         .then(data => {
@@ -211,7 +203,8 @@
                 return;
             }
 
-            data.forEach(p => {
+            const orderedProducts = applyStoredProductOrder(data, customerId);
+            orderedProducts.forEach(p => {
                 container.innerHTML += `
                     <div class="d-flex align-items-center justify-content-between mb-2 p-2 border-bottom product-item" data-id="${p.id}">
                         <div class="d-flex align-items-center">
@@ -236,6 +229,7 @@
         const row = btn.closest('.product-item');
         if (row.previousElementSibling) {
             row.parentNode.insertBefore(row, row.previousElementSibling);
+            saveCurrentProductOrder();
         }
     }
 
@@ -243,7 +237,45 @@
         const row = btn.closest('.product-item');
         if (row.nextElementSibling) {
             row.parentNode.insertBefore(row.nextElementSibling, row);
+            saveCurrentProductOrder();
         }
+    }
+
+    function getStoredProductOrder(customerId) {
+        if (!customerId) return [];
+        try {
+            const raw = localStorage.getItem(PRODUCT_ORDER_KEY_PREFIX + customerId);
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed.map(String) : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function applyStoredProductOrder(products, customerId) {
+        const storedOrder = getStoredProductOrder(customerId);
+        if (storedOrder.length === 0) return products;
+
+        const productMap = new Map();
+        products.forEach(p => productMap.set(String(p.id), p));
+
+        const ordered = [];
+        storedOrder.forEach(id => {
+            if (productMap.has(id)) {
+                ordered.push(productMap.get(id));
+                productMap.delete(id);
+            }
+        });
+
+        productMap.forEach(p => ordered.push(p));
+        return ordered;
+    }
+
+    function saveCurrentProductOrder() {
+        if (!currentCustomerId) return;
+        const orderedIds = Array.from(document.querySelectorAll('.product-item'))
+            .map(row => row.dataset.id);
+        localStorage.setItem(PRODUCT_ORDER_KEY_PREFIX + currentCustomerId, JSON.stringify(orderedIds));
     }
 
     function submitOrder(isEditMode) {

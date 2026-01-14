@@ -3,6 +3,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.views.generic import TemplateView, View, ListView, CreateView, UpdateView
 from django.shortcuts import get_object_or_404, redirect, render
+from django.http import JsonResponse
 from orders.models import OrderLine, FACILITY_LIST, OrderLog, OrderHeader
 from django.utils import timezone
 from collections import defaultdict
@@ -92,15 +93,17 @@ class MaterialOrderListView(LoginRequiredMixin, ListView):
         else:
             queryset = MaterialOrder.objects.none()
 
-        date_filter = self.request.GET.get('date')
-        if date_filter:
+        # date 파라미터가 없으면 오늘 날짜로, 값이 비어있으면 전체(None)로 취급
+        date_filter = self.request.GET.get('date', timezone.localdate().strftime('%Y-%m-%d'))
+        if date_filter: # date_filter가 빈 문자열이 아닌 경우에만 필터링
             queryset = queryset.filter(created_at__date=date_filter)
 
         return queryset.prefetch_related('items__product').order_by('-created_at')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['date_filter'] = self.request.GET.get('date', '')
+        # date 파라미터가 없으면 오늘 날짜를 기본값으로 설정
+        context['date_filter'] = self.request.GET.get('date', timezone.localdate().strftime('%Y-%m-%d'))
         return context
 
 class MaterialOrderStatusUpdateView(LoginRequiredMixin, UpdateView):
@@ -203,8 +206,10 @@ class ProductionStatusView(LoginRequiredMixin, TemplateView):
                 Q(header__created_by__first_name__icontains=q)
             )
 
-        date = self.request.GET.get('date', '')
-        if date and date != 'ALL':
+        date = self.request.GET.get('date')
+        if not date:
+            date = timezone.localdate().strftime('%Y-%m-%d')
+        if date != 'ALL':
             lines = lines.filter(header__requested_delivery_date=date)
 
         
@@ -254,6 +259,45 @@ class ProductionStatusView(LoginRequiredMixin, TemplateView):
             context['facility_list'] = ['제1공장', '제2공장'] 
 
         return context
+
+@login_required
+def pending_production_summary(request):
+    lines = OrderLine.objects.select_related('header', 'product').exclude(status='COMPLETED')
+    date = request.GET.get('date')
+    date_from = request.GET.get('date_from')
+    date_to = request.GET.get('date_to')
+    facility = request.GET.get('facility')
+
+    if date and date != 'ALL':
+        lines = lines.filter(header__requested_delivery_date=date)
+    if date_from:
+        lines = lines.filter(header__requested_delivery_date__gte=date_from)
+    if date_to:
+        lines = lines.filter(header__requested_delivery_date__lte=date_to)
+    if facility and facility != 'ALL':
+        lines = lines.filter(production_facility=facility)
+    grouped = {}
+
+    for line in lines:
+        date_str = line.header.requested_delivery_date.strftime('%Y-%m-%d')
+        key = (date_str, line.product_id, line.production_facility)
+        if key not in grouped:
+            grouped[key] = {
+                'date': date_str,
+                'product_id': line.product_id,
+                'product_name': line.product.name,
+                'product_sku': line.product.sku,
+                'production_facility': line.production_facility,
+                'total_qty': 0,
+                'line_count': 0,
+                'line_ids': [],
+            }
+        grouped[key]['total_qty'] += line.requested_quantity
+        grouped[key]['line_count'] += 1
+        grouped[key]['line_ids'].append(line.id)
+
+    items = sorted(grouped.values(), key=lambda item: (item['date'], item['product_name']))
+    return JsonResponse({'items': items})
 
 class OrderLineCompleteView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsProductionTeam]
@@ -310,7 +354,12 @@ class OrderLineBulkUpdateView(APIView):
         if not new_delivery_date and not new_facility:
             return Response({"error": "변경할 내용이 없습니다."}, status=status.HTTP_400_BAD_REQUEST)
 
-        lines_to_update = OrderLine.objects.filter(id__in=line_ids)
+        lines_to_update = OrderLine.objects.filter(id__in=line_ids).select_related('header')
+        header_ids = lines_to_update.values_list('header_id', flat=True).distinct()
+        headers = OrderHeader.objects.filter(id__in=header_ids).prefetch_related('lines')
+        lines_by_header = defaultdict(list)
+        for line in lines_to_update:
+            lines_by_header[line.header_id].append(line)
 
         with transaction.atomic():
             log_entries = []
@@ -327,18 +376,48 @@ class OrderLineBulkUpdateView(APIView):
 
             # 2. 납기일 변경 (OrderHeader)
             if new_delivery_date:
-                header_ids = lines_to_update.values_list('header_id', flat=True).distinct()
-                headers = OrderHeader.objects.filter(id__in=header_ids)
-                
                 for header in headers:
+                    selected_lines = lines_by_header.get(header.id, [])
+                    if not selected_lines:
+                        continue
+
                     if str(header.requested_delivery_date) != new_delivery_date:
-                        # 헤더에 속한 모든 라인에 로그 남기기
-                        for line in header.lines.filter(id__in=line_ids):
-                             log_entries.append(OrderLog(
+                        for line in selected_lines:
+                            log_entries.append(OrderLog(
                                 line=line, editor=request.user, change_type="일괄 납기일 변경",
                                 description=f"{header.requested_delivery_date} -> {new_delivery_date}"
                             ))
-                headers.update(requested_delivery_date=new_delivery_date)
+
+                        header_lines = list(header.lines.all())
+                        if len(selected_lines) == len(header_lines):
+                            header.requested_delivery_date = new_delivery_date
+                            update_fields = ['requested_delivery_date']
+                            if new_facility and header.production_facility != new_facility:
+                                header.production_facility = new_facility
+                                update_fields.append('production_facility')
+                            header.save(update_fields=update_fields)
+                        else:
+                            new_header = OrderHeader.objects.create(
+                                customer=header.customer,
+                                requested_delivery_date=new_delivery_date,
+                                memo=header.memo,
+                                created_by=header.created_by,
+                                production_facility=new_facility or header.production_facility
+                            )
+                            OrderLine.objects.filter(
+                                id__in=[line.id for line in selected_lines]
+                            ).update(header=new_header)
+
+            # 생산동만 변경하는 경우 헤더 동기화
+            if new_facility and not new_delivery_date:
+                for header in headers:
+                    selected_lines = lines_by_header.get(header.id, [])
+                    if not selected_lines:
+                        continue
+                    if len(selected_lines) == len(list(header.lines.all())):
+                        if header.production_facility != new_facility:
+                            header.production_facility = new_facility
+                            header.save(update_fields=['production_facility'])
             
             if log_entries:
                 OrderLog.objects.bulk_create(log_entries)
@@ -358,6 +437,31 @@ class OrderLineUpdateView(APIView):
         new_delivery_date = request.data.get('delivery_date')
 
         with transaction.atomic():
+            if new_delivery_date and str(line.header.requested_delivery_date) != new_delivery_date:
+                OrderLog.objects.create(
+                    line=line,
+                    editor=request.user,
+                    change_type="납기일 변경",
+                    description=f"{line.header.requested_delivery_date} -> {new_delivery_date}"
+                )
+
+                if line.header.lines.count() == 1:
+                    line.header.requested_delivery_date = new_delivery_date
+                    update_fields = ['requested_delivery_date']
+                    if new_facility and line.header.production_facility != new_facility:
+                        line.header.production_facility = new_facility
+                        update_fields.append('production_facility')
+                    line.header.save(update_fields=update_fields)
+                else:
+                    new_header = OrderHeader.objects.create(
+                        customer=line.header.customer,
+                        requested_delivery_date=new_delivery_date,
+                        memo=line.header.memo,
+                        created_by=line.header.created_by,
+                        production_facility=new_facility or line.header.production_facility
+                    )
+                    line.header = new_header
+
             if new_qty is not None:
                 new_qty = int(new_qty)
                 if line.fulfilled_quantity != new_qty:
@@ -379,7 +483,7 @@ class OrderLineUpdateView(APIView):
                         description="발주 메모 내용 변경됨"
                     )
                     line.header.memo = new_memo
-                    line.header.save()
+                    line.header.save(update_fields=['memo'])
 
             if new_facility and line.production_facility != new_facility:
                 OrderLog.objects.create(
@@ -389,16 +493,9 @@ class OrderLineUpdateView(APIView):
                     description=f"{line.production_facility} → {new_facility}"
                 )
                 line.production_facility = new_facility
-
-            if new_delivery_date and str(line.header.requested_delivery_date) != new_delivery_date:
-                OrderLog.objects.create(
-                    line=line,
-                    editor=request.user,
-                    change_type="납기일 변경",
-                    description=f"{line.header.requested_delivery_date} -> {new_delivery_date}"
-                )
-                line.header.requested_delivery_date = new_delivery_date
-                line.header.save()
+                if line.header.lines.count() == 1 and line.header.production_facility != new_facility:
+                    line.header.production_facility = new_facility
+                    line.header.save(update_fields=['production_facility'])
                 
             line.save()
         return Response({"message": "수정되었습니다."}, status=status.HTTP_200_OK)
