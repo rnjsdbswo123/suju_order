@@ -13,4 +13,4 @@ def set_current_user(user):
     _thread_local.user = user
 
 # 생산동 리스트 정의
-FACILITY_LIST = ['A동', 'B동', 'C동', '관리동', '구운란동', '외부가공']
+FACILITY_LIST = ['A', 'B', 'C', '관리', '구운란', '외부가공']

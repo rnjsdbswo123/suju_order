@@ -1,0 +1,9 @@
+오늘 수정한 파일 목록은 다음과 같습니다:
+
+1.  `production/views.py`: 부자재 발주 목록의 날짜 필터 기본값과 `require_POST` 임포트 오류를 수정했습니다.
+2.  `templates/production/material_order_list.html`: 부자재 발주 목록 화면에 인쇄 버튼과 인쇄용 스타일을 추가했습니다.
+3.  `masters/views.py`: 부자재 삭제 기능을 위한 뷰 함수를 추가하고 `require_POST` 임포트 경로를 수정했습니다.
+4.  `masters/urls.py`: 부자재 삭제 기능을 위한 URL 패턴을 추가했습니다.
+5.  `templates/masters/rawmaterial_form.html`: 부자재 수정 화면에 삭제 버튼을 추가하고, 중첩된 폼 문제를 해결했습니다.
+6.  `SujuOrderSystem/urls.py`: `production` URL namespace 중복 경고를 해결하기 위해 중복된 API 경로 포함을 제거했습니다.
+7.  `.gitignore`: `gemini/upload.md` 파일을 Git 추적에서 제외하도록 추가했습니다.

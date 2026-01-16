@@ -12,12 +12,14 @@ from .views import (
     MaterialOrderStatusUpdateView,
     MaterialOrderQuantityUpdateView,
     material_order_delete,
+    check_production_updates,
 )
 
 app_name = 'production'
 
 urlpatterns = [
     path('status/', ProductionStatusView.as_view(), name='production-status-ui'),
+    path('status/check-updates/', check_production_updates, name='check-production-updates'),
     path('pending-summary/', pending_production_summary, name='pending-summary'),
     path('line/<int:pk>/complete/', OrderLineCompleteView.as_view(), name='line-complete'),
     path('lines/bulk_complete/', OrderLineBulkCompleteView.as_view(), name='lines-bulk-complete'),

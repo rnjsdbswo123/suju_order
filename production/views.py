@@ -4,13 +4,14 @@ from rest_framework.views import APIView
 from django.views.generic import TemplateView, View, ListView, CreateView, UpdateView
 from django.shortcuts import get_object_or_404, redirect, render
 from django.http import JsonResponse
-from orders.models import OrderLine, FACILITY_LIST, OrderLog, OrderHeader
+from orders.models import OrderLine, OrderLog, OrderHeader
+from SujuOrderSystem.utils import FACILITY_LIST
 from django.utils import timezone
 from collections import defaultdict
 from orders.permissions import IsProductionTeam
 from users.permissions import is_in_role
 from rest_framework import serializers
-from django.db.models import Q
+from django.db.models import Q, Sum, F
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.urls import reverse_lazy
 from django.db import transaction
@@ -190,73 +191,122 @@ class ProductionStatusView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
+        # 1. Get parameters from request
+        group_by = self.request.GET.get('group_by', 'product')
+        sort_by = self.request.GET.get('sort', 'delivery_date')
+        sort_dir = self.request.GET.get('dir', 'asc')
+        q = self.request.GET.get('q', '')
+        date = self.request.GET.get('date', timezone.localdate().strftime('%Y-%m-%d'))
+        facility = self.request.GET.get('facility', '')
+        status_filter = self.request.GET.get('status', 'all')
+
+        # 2. Base queryset
         lines = OrderLine.objects.select_related(
             'header', 
             'header__customer', 
             'header__created_by', 
             'product'
-        ).order_by('header__requested_delivery_date')
+        )
 
-        q = self.request.GET.get('q', '')
+        # 3. Filtering
         if q:
             lines = lines.filter(
                 Q(header__customer__name__icontains=q) |
                 Q(header__created_by__username__icontains=q) |
                 Q(header__created_by__last_name__icontains=q) |
-                Q(header__created_by__first_name__icontains=q)
+                Q(header__created_by__first_name__icontains=q) |
+                Q(product__name__icontains=q)
             )
 
-        date = self.request.GET.get('date')
-        if not date:
-            date = timezone.localdate().strftime('%Y-%m-%d')
-        if date != 'ALL':
+        if date and date != 'ALL':
             lines = lines.filter(header__requested_delivery_date=date)
 
-        
-
-        facility = self.request.GET.get('facility', '')
-
         if facility and facility != 'ALL':
-
-            # 'A동'으로 필터링 시 'A'와 'A동' 모두 포함하도록 startswith 사용
-
             facility_prefix = facility.removesuffix('동')
-
             lines = lines.filter(production_facility__startswith=facility_prefix)
-        grouped_data = {}
-        for line in lines:
-            pid = line.product.id
-            if pid not in grouped_data:
-                grouped_data[pid] = {
-                    'product': line.product,
-                    'lines': [],
-                    'total_qty': 0,
-                    'group_status': 'PENDING'
-                }
-            grouped_data[pid]['lines'].append(line)
-            grouped_data[pid]['total_qty'] += line.requested_quantity
+        
+        if status_filter == 'completed':
+            lines = lines.filter(status='COMPLETED')
+        elif status_filter == 'incomplete':
+            lines = lines.exclude(status='COMPLETED')
 
-        final_list = []
-        for pid, group in grouped_data.items():
-            all_completed = all(l.status == 'COMPLETED' for l in group['lines'])
-            if all_completed:
-                total_req = sum(l.requested_quantity for l in group['lines'])
-                total_ful = sum(l.fulfilled_quantity for l in group['lines'])
-                if total_req == total_ful:
-                    group['group_status'] = 'PERFECT'
+        # 4. Branch logic based on grouping
+        if group_by == 'time':
+            # Ungrouped view, sorted by time
+            context['results'] = lines.order_by('-header__created_at')
+        else:
+            # Grouped view (product or customer)
+            grouped_data = defaultdict(lambda: {'lines': [], 'total_qty': 0})
+            
+            for line in lines:
+                key_obj, key_id = None, None
+                if group_by == 'product':
+                    key_obj, key_id = line.product, line.product_id
+                    if 'product' not in grouped_data[key_id]:
+                        grouped_data[key_id]['product'] = key_obj
+                else: # group_by == 'customer'
+                    key_obj, key_id = line.header.customer, line.header.customer_id
+                    if 'customer' not in grouped_data[key_id]:
+                        grouped_data[key_id]['customer'] = key_obj
+
+                grouped_data[key_id]['lines'].append(line)
+
+            # Status filtering and Sorting within groups
+            sort_field_map = {
+                'delivery_date': 'header.requested_delivery_date',
+                'customer': 'header.customer.name',
+                'requester': 'header.created_by.username',
+                'product': 'product.name',
+                'order_time': 'header.created_at',
+                'memo': 'header.memo'
+            }
+            sort_key = sort_field_map.get(sort_by, 'header.requested_delivery_date')
+
+            final_list = []
+            from operator import attrgetter
+            for key, group in grouped_data.items():
+                original_lines = group['lines']
+                
+                # Sort lines within the group
+                try:
+                    sorted_lines = sorted(original_lines, key=attrgetter(sort_key), reverse=(sort_dir == 'desc'))
+                except AttributeError:
+                    sorted_lines = sorted(original_lines, key=lambda l: getattr(l, sort_key, None), reverse=(sort_dir == 'desc'))
+
+                group['lines'] = sorted_lines
+                group['total_qty'] = sum(l.requested_quantity for l in sorted_lines)
+                
+                any_completed = any(l.status == 'COMPLETED' for l in original_lines)
+                all_completed = all(l.status == 'COMPLETED' for l in original_lines)
+
+                if all_completed:
+                    total_req = sum(l.requested_quantity for l in original_lines)
+                    total_ful = sum(l.fulfilled_quantity for l in original_lines)
+                    group['group_status'] = 'PERFECT' if total_req == total_ful else 'IMPERFECT'
+                elif any_completed:
+                    group['group_status'] = 'PARTIAL'
                 else:
-                    group['group_status'] = 'IMPERFECT'
-            final_list.append(group)
-
-        context['grouped_lines'] = final_list
+                    group['group_status'] = 'PENDING'
+                
+                final_list.append(group)
+            
+            # Sort the final groups themselves
+            if group_by == 'product':
+                final_list.sort(key=lambda g: g.get('product').name if g.get('product') else '')
+            else: # group_by == 'customer'
+                final_list.sort(key=lambda g: g.get('customer').name if g.get('customer') else '')
+            context['results'] = final_list
+        
+        # 6. Pass common context to template
         context['search_query'] = q
         context['selected_date'] = date
         context['selected_facility'] = facility
-        
-        try:
-            context['facility_list'] = FACILITY_LIST
-        except NameError:
-            context['facility_list'] = ['제1공장', '제2공장'] 
+        context['selected_status'] = status_filter
+        context['facility_list'] = FACILITY_LIST
+        context['group_by'] = group_by
+        context['sort_by'] = sort_by
+        context['sort_dir'] = sort_dir
+        context['next_sort_dir'] = 'desc' if sort_dir == 'asc' else 'asc'
 
         return context
 
@@ -568,3 +618,110 @@ class ProductionOrderListView(LoginRequiredMixin, TemplateView):
         except NameError:
             context['facility_list'] = ['제1공장', '제2공장'] 
         return context
+        
+# ====================================================================
+# API v2 for production status
+# ====================================================================
+
+@login_required
+def production_summary_api(request):
+    """
+    생산 현황판의 요약 데이터를 반환하는 API
+    - 날짜, 생산동, 상태별 필터링 기능 추가
+    """
+    # Get query params
+    date = request.GET.get('date')
+    facility = request.GET.get('facility')
+    status_filter = request.GET.get('status')
+
+    # Base queryset
+    lines = OrderLine.objects.select_related('product', 'header')
+
+    # Filter by date
+    if date:
+        lines = lines.filter(header__requested_delivery_date=date)
+
+    # Filter by facility
+    if facility:
+        lines = lines.filter(production_facility=facility)
+
+    # Group by product and aggregate
+    summary = lines.values('product__id', 'product__name').annotate(
+        total_requested=Sum('requested_quantity'),
+        total_fulfilled=Sum('fulfilled_quantity')
+    ).order_by('product__name')
+    
+    # Filter by status (after aggregation)
+    if status_filter == 'completed':
+        # Show only products where requested equals fulfilled
+        summary = summary.filter(total_requested=F('total_fulfilled'))
+    elif status_filter == 'incomplete':
+        # Show products where requested does not equal fulfilled
+        summary = summary.exclude(total_requested=F('total_fulfilled'))
+
+    return JsonResponse(list(summary), safe=False)
+
+
+@login_required
+def production_detail_api(request):
+    """
+    특정 날짜, 특정 품목에 대한 상세 주문 내역을 반환하는 API
+    """
+    date = request.GET.get('date')
+    product_id = request.GET.get('product_id')
+
+    lines = OrderLine.objects.filter(
+        header__requested_delivery_date=date,
+        product_id=product_id
+    ).select_related('header__customer', 'header__created_by')
+
+    details = []
+    for line in lines:
+        details.append({
+            'customer_name': line.header.customer.name,
+            'created_by': line.header.created_by.username,
+            'facility': line.production_facility,
+            'status': '완료' if line.status == 'COMPLETED' else '미완료',
+            'fulfilled_qty': line.fulfilled_quantity,
+            'requested_qty': line.requested_quantity,
+            'line_id': line.id
+        })
+    
+    return JsonResponse(details, safe=False)
+
+@login_required
+def check_production_updates(request):
+    latest_id = request.GET.get('latest_id', 0)
+    
+    q = request.GET.get('q', '')
+    date = request.GET.get('date')
+    facility = request.GET.get('facility', '')
+
+    try:
+        latest_id = int(latest_id)
+    except (ValueError, TypeError):
+        latest_id = 0
+
+    lines = OrderLine.objects.filter(id__gt=latest_id)
+
+    if q:
+        lines = lines.filter(
+            Q(header__customer__name__icontains=q) |
+            Q(header__created_by__username__icontains=q) |
+            Q(product__name__icontains=q)
+        )
+    
+    if date and date != 'ALL':
+        lines = lines.filter(header__requested_delivery_date=date)
+
+    if facility and facility != 'ALL':
+        facility_prefix = facility.removesuffix('동')
+        lines = lines.filter(production_facility__startswith=facility_prefix)
+    
+    status_filter = request.GET.get('status', 'all')
+    if status_filter == 'completed':
+        lines = lines.none() 
+
+    count = lines.count()
+    
+    return JsonResponse({'new_items_count': count})

@@ -1,0 +1,100 @@
+<table class="table table-sm table-bordered mb-0 align-middle text-center" style="table-layout: fixed;"> 
+    <thead class="bg-light">
+        <tr>
+            <th style="width: 50px;">✓</th>
+            {% with base_href="?date="|add:selected_date|add:"&facility="|add:selected_facility|add:"&q="|add:search_query|add:"&status="|add:selected_status|add:"&group_by="|add:group_by %}
+            <th style="width: 120px;">
+                <a class="text-decoration-none text-dark fw-bold" href="{{ base_href }}&sort=order_time&dir={% if sort_by == 'order_time' %}{{ next_sort_dir }}{% else %}asc{% endif %}">
+                    발주 시간 {% if sort_by == 'order_time' %}{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}
+                </a>
+            </th>
+            <th style="width: 120px;">
+                <a class="text-decoration-none text-dark fw-bold" href="{{ base_href }}&sort=delivery_date&dir={% if sort_by == 'delivery_date' %}{{ next_sort_dir }}{% else %}asc{% endif %}">
+                    생산일 {% if sort_by == 'delivery_date' %}{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}
+                </a>
+            </th>
+            
+            {% if group_by == 'product' %}
+            <th>
+                <a class="text-decoration-none text-dark fw-bold" href="{{ base_href }}&sort=customer&dir={% if sort_by == 'customer' %}{{ next_sort_dir }}{% else %}asc{% endif %}">
+                    거래처 {% if sort_by == 'customer' %}{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}
+                </a>
+            </th>
+            {% else %}
+            <th>
+                <a class="text-decoration-none text-dark fw-bold" href="{{ base_href }}&sort=product&dir={% if sort_by == 'product' %}{{ next_sort_dir }}{% else %}asc{% endif %}">
+                    품목명 {% if sort_by == 'product' %}{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}
+                </a>
+            </th>
+            {% endif %}
+
+            <th style="width: 120px;">
+                <a class="text-decoration-none text-dark fw-bold" href="{{ base_href }}&sort=requester&dir={% if sort_by == 'requester' %}{{ next_sort_dir }}{% else %}asc{% endif %}">
+                    요청자 {% if sort_by == 'requester' %}{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}
+                </a>
+            </th> 
+            <th>
+                 <a class="text-decoration-none text-dark fw-bold" href="{{ base_href }}&sort=memo&dir={% if sort_by == 'memo' %}{{ next_sort_dir }}{% else %}asc{% endif %}">
+                    메모 {% if sort_by == 'memo' %}{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}
+                </a>
+            </th>
+            <th style="width: 100px;">생산동</th>
+            <th style="width: 160px;">완료수량 / 요청</th>
+            <th style="width: 140px;">작업</th> 
+            {% endwith %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for line in lines %}
+        {% if group_by == 'product' %}
+        <tr class="group-product-{{ group.product.id }} {% if line.status == 'COMPLETED' %}{% if line.fulfilled_quantity == line.requested_quantity %}table-green{% else %}table-red{% endif %} text-muted{% endif %}">
+        {% else %}
+        <tr class="group-customer-{{ group.customer.id }} {% if line.status == 'COMPLETED' %}{% if line.fulfilled_quantity == line.requested_quantity %}table-green{% else %}table-red{% endif %} text-muted{% endif %}">
+        {% endif %}
+            <td>
+                <input type="checkbox" class="form-check-input line-check" value="{{ line.id }}" {% if line.status == 'COMPLETED' %}disabled{% endif %}>
+            </td>
+            
+            <td>{{ line.header.created_at|date:"Y-m-d H:i" }}</td> {# Added for order time #}
+            <td>{{ line.header.requested_delivery_date|date:"Y-m-d" }}</td>
+            
+            {% if group_by == 'product' %}
+            <td class="text-truncate" title="{{ line.header.customer.name }}">{{ line.header.customer.name }}</td>
+            {% else %}
+            <td class="text-start text-truncate" title="{{ line.product.name }}">
+                <span class="fw-bold">{{ line.product.name }}</span><br>
+                <small class="text-muted">{{ line.product.sku }}</small>
+            </td>
+            {% endif %}
+
+            <td class="fw-bold text-primary">
+                {{ line.header.created_by.username|default:"-" }}
+            </td>
+
+            <td class="text-start small text-muted text-truncate" title="{{ line.header.memo|default:'-' }}">{{ line.header.memo|default:"-" }}</td>
+            <td><span class="badge bg-info text-dark">{{ line.production_facility }}</span></td>
+            
+            <td>
+                <div class="input-group input-group-sm">
+                    <input type="number" id="qty-{{ line.id }}" 
+                        class="form-control text-end fw-bold {% if line.status == 'COMPLETED' %}{% if line.fulfilled_quantity == line.requested_quantity %}text-success{% else %}text-danger{% endif %}{% else %}text-success{% endif %}" 
+                        value="{{ line.fulfilled_quantity|default:0 }}" min="0" 
+                        {% if line.status == 'COMPLETED' %}disabled{% endif %}>
+                    <span class="input-group-text">/ {{ line.requested_quantity }}</span>
+                </div>
+            </td>
+            
+            <td>
+                <div class="d-flex justify-content-center align-items-center gap-1">
+                    <button class="btn btn-sm btn-outline-primary" onclick="openEditModal({{ line.id }}, {{ line.fulfilled_quantity|default:0 }}, '{{ line.header.memo|default:''|escapejs }}', '{{ line.production_facility }}', '{{ line.header.requested_delivery_date|date:'Y-m-d' }}')">✏️</button>
+                    {% if line.status != 'COMPLETED' %}
+                        <button class="btn btn-sm btn-outline-success" onclick="completeLine({{ line.id }})">OK</button>
+                    {% else %}
+                        <button class="btn btn-sm btn-outline-secondary" disabled>완료</button>
+                    {% endif %}
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>

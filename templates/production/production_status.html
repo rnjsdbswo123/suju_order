@@ -6,6 +6,8 @@
     .table-green:hover { background-color: #badbcc !important; --bs-table-bg: #badbcc !important; }
     .table-red { background-color: #ffe5d0 !important; --bs-table-bg: #ffe5d0 !important; }
     .table-red:hover { background-color: #ffd6b3 !important; --bs-table-bg: #ffd6b3 !important; }
+    .table-yellow { background-color: #fff3cd !important; --bs-table-bg: #fff3cd !important; }
+    .table-yellow:hover { background-color: #ffe69c !important; --bs-table-bg: #ffe69c !important; }
     
     /* 탭 스타일 */
     .nav-pills .nav-link.active { background-color: #0d6efd; }
@@ -19,6 +21,10 @@
 
 <div class="container-fluid mt-4">
     
+    <div id="update-notification" class="alert alert-info fw-bold text-center" style="display: none;" role="alert">
+        <!-- New items notification will be inserted here by JavaScript -->
+    </div>
+
     <div class="bg-white shadow-sm rounded border mb-4">
         <div class="d-flex justify-content-between align-items-center p-4 border-bottom">
             <div class="d-flex align-items-center gap-2">
@@ -62,19 +68,39 @@
 
     <ul class="nav nav-pills mb-3">
         <li class="nav-item">
-            <a class="nav-link {% if selected_facility == 'ALL' %}active{% endif %}" href="?date={{ selected_date }}&facility=ALL&q={{ search_query }}">전체 공장</a>
+            <a class="nav-link {% if selected_facility == 'ALL' %}active{% endif %}" href="?date={{ selected_date }}&facility=ALL&q={{ search_query }}&status={{ selected_status }}&group_by={{ group_by }}&sort={{ sort_by }}&dir={{ sort_dir }}">전체 공장</a>
         </li>
         {% for fac in facility_list %}
         <li class="nav-item">
-            <a class="nav-link {% if selected_facility == fac %}active{% endif %}" href="?date={{ selected_date }}&facility={{ fac }}&q={{ search_query }}">{{ fac }}</a>
+            <a class="nav-link {% if selected_facility == fac %}active{% endif %}" href="?date={{ selected_date }}&facility={{ fac }}&q={{ search_query }}&status={{ selected_status }}&group_by={{ group_by }}&sort={{ sort_by }}&dir={{ sort_dir }}">{{ fac }}</a>
         </li>
         {% endfor %}
     </ul>
+
+    <div class="d-flex align-items-center mb-3 justify-content-between">
+        <div class="d-flex align-items-center">
+            <strong class="me-3">상태:</strong>
+            <div class="btn-group btn-group-lg">
+                <a href="?date={{ selected_date }}&facility={{ selected_facility }}&q={{ search_query }}&status=all&group_by={{ group_by }}&sort={{ sort_by }}&dir={{ sort_dir }}" class="btn {% if selected_status == 'all' or not selected_status %}btn-primary{% else %}btn-outline-secondary{% endif %} fw-bold">전체</a>
+                <a href="?date={{ selected_date }}&facility={{ selected_facility }}&q={{ search_query }}&status=incomplete&group_by={{ group_by }}&sort={{ sort_by }}&dir={{ sort_dir }}" class="btn {% if selected_status == 'incomplete' %}btn-danger{% else %}btn-outline-secondary{% endif %} fw-bold">미완료</a>
+                <a href="?date={{ selected_date }}&facility={{ selected_facility }}&q={{ search_query }}&status=completed&group_by={{ group_by }}&sort={{ sort_by }}&dir={{ sort_dir }}" class="btn {% if selected_status == 'completed' %}btn-success{% else %}btn-outline-secondary{% endif %} fw-bold">완료</a>
+            </div>
+        </div>
+        <div>
+            <strong class="me-3">묶음 기준:</strong>
+            <div class="btn-group btn-group-lg" role="group">
+                <a href="?date={{ selected_date }}&facility={{ selected_facility }}&q={{ search_query }}&status={{ selected_status }}&group_by=product" class="btn {% if group_by == 'product' %}btn-primary{% else %}btn-outline-secondary{% endif %} fw-bold">품목별</a>
+                <a href="?date={{ selected_date }}&facility={{ selected_facility }}&q={{ search_query }}&status={{ selected_status }}&group_by=customer" class="btn {% if group_by == 'customer' %}btn-primary{% else %}btn-outline-secondary{% endif %} fw-bold">거래처별</a>
+                <a href="?date={{ selected_date }}&facility={{ selected_facility }}&q={{ search_query }}&status={{ selected_status }}&group_by=time" class="btn {% if group_by == 'time' %}btn-primary{% else %}btn-outline-secondary{% endif %} fw-bold">발주시간순</a>
+            </div>
+        </div>
+    </div>
 
     <div class="card mb-4 border-0 shadow-sm bg-light">
         <div class="card-body py-3">
             <form method="get" action="." class="row g-2 align-items-center">
                 <input type="hidden" name="facility" value="{{ selected_facility }}">
+                <input type="hidden" name="group_by" value="{{ group_by }}">
                 
                 <div class="col-auto"><label class="fw-bold">📅 생산일:</label></div>
                 <div class="col-auto">
@@ -84,7 +110,7 @@
                 <div class="col-auto ms-3"><label class="fw-bold">🔍 통합 검색:</label></div>
                 <div class="col-auto">
                     <input type="text" name="q" class="form-control search-input" 
-                           placeholder="거래처명 또는 ID(admin) 검색" 
+                           placeholder="거래처, 요청자, 품목명 등" 
                            value="{{ search_query }}">
                 </div>
 
@@ -98,6 +124,68 @@
 
     <div class="card shadow-sm">
         <div class="card-body p-0">
+            {% if group_by == 'time' %}
+            {# =================== 발주시간순 묶음 (신규) =================== #}
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light text-center">
+                    <tr>
+                        <th style="width: 50px;"><input type="checkbox" class="form-check-input" onchange="toggleAllChecks(this)"></th>
+                        <th>발주 시간</th>
+                        <th>생산일</th>
+                        <th>거래처</th>
+                        <th>품목명</th>
+                        <th>요청자</th>
+                        <th>메모</th>
+                        <th>생산동</th>
+                        <th>완료수량 / 요청</th>
+                        <th>작업</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for line in results %}
+                    <tr class="{% if line.status == 'COMPLETED' %}{% if line.fulfilled_quantity == line.requested_quantity %}table-green{% else %}table-red{% endif %} text-muted{% endif %}">
+                        <td class="text-center">
+                            <input type="checkbox" class="form-check-input line-check" value="{{ line.id }}" {% if line.status == 'COMPLETED' %}disabled{% endif %}>
+                        </td>
+                        <td>{{ line.header.created_at|date:"Y-m-d H:i" }}</td>
+                        <td>{{ line.header.requested_delivery_date|date:"Y-m-d" }}</td>
+                        <td class="text-truncate" title="{{ line.header.customer.name }}">{{ line.header.customer.name }}</td>
+                        <td class="text-start">
+                            <span class="fw-bold">{{ line.product.name }}</span><br>
+                            <small class="text-muted">{{ line.product.sku }}</small>
+                        </td>
+                        <td class="fw-bold text-primary">{{ line.header.created_by.username|default:"-" }}</td>
+                        <td class="text-start small text-muted text-truncate" title="{{ line.header.memo|default:'-' }}">{{ line.header.memo|default:"-" }}</td>
+                        <td><span class="badge bg-info text-dark">{{ line.production_facility }}</span></td>
+                        <td>
+                            <div class="input-group input-group-sm">
+                                <input type="number" id="qty-{{ line.id }}" 
+                                    class="form-control text-end fw-bold {% if line.status == 'COMPLETED' %}{% if line.fulfilled_quantity == line.requested_quantity %}text-success{% else %}text-danger{% endif %}{% else %}text-success{% endif %}" 
+                                    value="{{ line.fulfilled_quantity|default:0 }}" min="0" 
+                                    {% if line.status == 'COMPLETED' %}disabled{% endif %}>
+                                <span class="input-group-text">/ {{ line.requested_quantity }}</span>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="d-flex justify-content-center align-items-center gap-1">
+                                <button class="btn btn-sm btn-outline-primary" onclick="openEditModal({{ line.id }}, {{ line.fulfilled_quantity|default:0 }}, '{{ line.header.memo|default:''|escapejs }}', '{{ line.production_facility }}', '{{ line.header.requested_delivery_date|date:'Y-m-d' }}')">✏️</button>
+                                {% if line.status != 'COMPLETED' %}
+                                    <button class="btn btn-sm btn-outline-success" onclick="completeLine({{ line.id }})">OK</button>
+                                {% else %}
+                                    <button class="btn btn-sm btn-outline-secondary" disabled>완료</button>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="10" class="text-center py-5 text-muted">검색된 데이터가 없습니다.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            {# =================== 그룹별 묶음 (기존) =================== #}
+            {% if group_by == 'product' %}
+            {# =================== 품목별 묶음 =================== #}
             <table class="table table-hover align-middle mb-0">
                 <thead class="table-light text-center">
                     <tr>
@@ -109,87 +197,32 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for group in grouped_lines %}
-                    <tr class="{% if group.group_status == 'PERFECT' %}table-green{% elif group.group_status == 'IMPERFECT' %}table-red{% else %}table-secondary{% endif %}">
+                    {% for group in results %}
+                    <tr class="{% if group.group_status == 'PERFECT' %}table-green{% elif group.group_status == 'IMPERFECT' %}table-red{% elif group.group_status == 'PARTIAL' %}table-yellow{% else %}table-secondary{% endif %}">
                         <td class="text-center">
-                            <input type="checkbox" class="form-check-input group-check" onchange="toggleGroupChecks(this, 'group-{{ group.product.id }}')">
+                            <input type="checkbox" class="form-check-input group-check" onchange="toggleGroupChecks(this, 'group-product-{{ group.product.id }}')">
                         </td>
                         <td>
                             <span class="fw-bold fs-5">{{ group.product.name }}</span><br>
                             <small class="text-muted">{{ group.product.sku }}</small>
-                            {% if group.group_status == 'PERFECT' %}
-                                <span class="badge bg-success ms-1">완료 (정상)</span>
-                            {% elif group.group_status == 'IMPERFECT' %}
-                                <span class="badge bg-danger ms-1">완료 (수량차이)</span>
+                            {% if group.group_status == 'PERFECT' %}<span class="badge bg-success ms-1">완료 (정상)</span>
+                            {% elif group.group_status == 'IMPERFECT' %}<span class="badge bg-danger ms-1">완료 (수량차이)</span>
+                            {% elif group.group_status == 'PARTIAL' %}<span class="badge bg-warning ms-1">부분 완료</span>
                             {% endif %}
                         </td>
                         <td class="text-center fw-bold">{{ group.lines|length }}건</td>
                         <td class="text-center fw-bold text-primary fs-5">{{ group.total_qty }}개</td>
                         <td class="text-center">
-                            <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ group.product.id }}">
+                            <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-product-{{ group.product.id }}">
                                 ▼ 펼치기
                             </button>
                         </td>
                     </tr>
-                    
                     <tr>
                         <td colspan="5" class="p-0 border-0">
-                            <div class="collapse show" id="collapse-{{ group.product.id }}">
+                            <div class="collapse show" id="collapse-product-{{ group.product.id }}">
                                 <div class="bg-white p-3 border-bottom">
-                                    <table class="table table-sm table-bordered mb-0 align-middle text-center" style="table-layout: fixed;"> 
-                                        <thead class="bg-light">
-                                            <tr>
-                                                <th style="width: 50px;">✓</th>
-                                                <th style="width: 120px;">생산일</th>
-                                                <th>거래처</th> 
-                                                <th style="width: 120px;">요청자(ID)</th> 
-                                                <th>메모</th>
-                                                <th style="width: 100px;">생산동</th>
-                                                <th style="width: 160px;">완료수량 / 요청</th>
-                                                <th style="width: 140px;">작업</th> 
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {% for line in group.lines %}
-                                            <tr class="group-{{ group.product.id }} {% if line.status == 'COMPLETED' %}{% if line.fulfilled_quantity == line.requested_quantity %}table-green{% else %}table-red{% endif %} text-muted{% endif %}">
-                                                <td>
-                                                    <input type="checkbox" class="form-check-input line-check" value="{{ line.id }}" {% if line.status == 'COMPLETED' %}disabled{% endif %}>
-                                                </td>
-                                                
-                                                <td>{{ line.header.requested_delivery_date|date:"Y-m-d" }}</td>
-                                                <td class="text-truncate" title="{{ line.header.customer.name }}">{{ line.header.customer.name }}</td>
-
-                                                <td class="fw-bold text-primary">
-                                                    {{ line.header.created_by.username|default:"-" }}
-                                                </td>
-
-                                                <td class="text-start small text-muted text-truncate" title="{{ line.header.memo|default:'-' }}">{{ line.header.memo|default:"-" }}</td>
-                                                <td><span class="badge bg-info text-dark">{{ line.production_facility }}</span></td>
-                                                
-                                                <td>
-                                                    <div class="input-group input-group-sm">
-                                                        <input type="number" id="qty-{{ line.id }}" 
-                                                            class="form-control text-end fw-bold {% if line.status == 'COMPLETED' %}{% if line.fulfilled_quantity == line.requested_quantity %}text-success{% else %}text-danger{% endif %}{% else %}text-success{% endif %}" 
-                                                            value="{{ line.fulfilled_quantity|default:0 }}" min="0" 
-                                                            {% if line.status == 'COMPLETED' %}disabled{% endif %}>
-                                                        <span class="input-group-text">/ {{ line.requested_quantity }}</span>
-                                                    </div>
-                                                </td>
-                                                
-                                                <td>
-                                                    <div class="d-flex justify-content-center align-items-center gap-1">
-                                                        <button class="btn btn-sm btn-outline-primary" onclick="openEditModal({{ line.id }}, {{ line.fulfilled_quantity }}, '{{ line.header.memo|default:''|escapejs }}', '{{ line.production_facility }}', '{{ line.header.requested_delivery_date|date:'Y-m-d' }}')">✏️</button>
-                                                        {% if line.status != 'COMPLETED' %}
-                                                            <button class="btn btn-sm btn-outline-success" onclick="completeLine({{ line.id }})">OK</button>
-                                                        {% else %}
-                                                            <span class="badge bg-secondary ms-1">완료됨</span>
-                                                        {% endif %}
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                            {% endfor %}
-                                        </tbody>
-                                    </table>
+                                    {% include 'production/status_table_inner.html' with lines=group.lines group_by=group_by %}
                                 </div>
                             </div>
                         </td>
@@ -199,6 +232,55 @@
                     {% endfor %}
                 </tbody>
             </table>
+            {% else %}
+            {# =================== 거래처별 묶음 =================== #}
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light text-center">
+                    <tr>
+                        <th style="width: 50px;"><input type="checkbox" class="form-check-input" onchange="toggleAllChecks(this)"></th>
+                        <th>거래처명</th>
+                        <th>총 작업 건수</th>
+                        <th>총 요청 수량</th>
+                        <th style="width: 100px;">상세보기</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for group in results %}
+                    <tr class="{% if group.group_status == 'PERFECT' %}table-green{% elif group.group_status == 'IMPERFECT' %}table-red{% elif group.group_status == 'PARTIAL' %}table-yellow{% else %}table-secondary{% endif %}">
+                        <td class="text-center">
+                            <input type="checkbox" class="form-check-input group-check" onchange="toggleGroupChecks(this, 'group-customer-{{ group.customer.id }}')">
+                        </td>
+                        <td>
+                            <span class="fw-bold fs-5">{{ group.customer.name }}</span><br>
+                            {% if group.group_status == 'PERFECT' %}<span class="badge bg-success ms-1">완료 (정상)</span>
+                            {% elif group.group_status == 'IMPERFECT' %}<span class="badge bg-danger ms-1">완료 (수량차이)</span>
+                            {% elif group.group_status == 'PARTIAL' %}<span class="badge bg-warning ms-1">부분 완료</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center fw-bold">{{ group.lines|length }}건</td>
+                        <td class="text-center fw-bold text-primary fs-5">{{ group.total_qty }}개</td>
+                        <td class="text-center">
+                            <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-customer-{{ group.customer.id }}">
+                                ▼ 펼치기
+                            </button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td colspan="5" class="p-0 border-0">
+                            <div class="collapse show" id="collapse-customer-{{ group.customer.id }}">
+                                <div class="bg-white p-3 border-bottom">
+                                    {% include 'production/status_table_inner.html' with lines=group.lines group_by=group_by %}
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="text-center py-5 text-muted">검색된 데이터가 없습니다.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+        {% endif %}
         </div>
     </div>
 </div>
@@ -609,5 +691,46 @@
 
     const resetLink = document.querySelector('a[href="?facility=ALL"]');
     if (resetLink) resetLink.setAttribute('href', '?facility=ALL&date=ALL');
+
+    // Real-time update checker
+    document.addEventListener('DOMContentLoaded', () => {
+        const lineCheckboxes = document.querySelectorAll('.line-check');
+        let latestId = 0;
+        if (lineCheckboxes.length > 0) {
+            const ids = Array.from(lineCheckboxes).map(cb => parseInt(cb.value, 10));
+            latestId = Math.max(...ids);
+        }
+        
+        const notificationBar = document.getElementById('update-notification');
+        const currentParams = new URLSearchParams(window.location.search);
+        currentParams.set('latest_id', latestId);
+        
+        const checkUrl = `/production/status/check-updates/?${currentParams.toString()}`;
+
+        let pollingInterval = null;
+
+        function checkUpdates() {
+            axios.get(checkUrl)
+                .then(response => {
+                    const count = response.data.new_items_count;
+                    if (count > 0) {
+                        notificationBar.innerHTML = `${count}개의 새로운 발주가 있습니다. <a href="#" onclick="location.reload(); return false;" class="alert-link">새로고침하여 보기</a>`;
+                        notificationBar.style.display = 'block';
+                        if (pollingInterval) {
+                            clearInterval(pollingInterval);
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error("Error checking for updates:", error);
+                    if (pollingInterval) {
+                        clearInterval(pollingInterval); // Stop polling on error
+                    }
+                });
+        }
+
+        // Start polling after initial delay to allow other scripts to run
+        pollingInterval = setInterval(checkUpdates, 15000); // Poll every 15 seconds
+    });
 </script>
 {% endblock scripts %}

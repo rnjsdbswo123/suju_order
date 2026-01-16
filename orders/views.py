@@ -24,6 +24,8 @@ class OrderFormView(LoginRequiredMixin, TemplateView):
         context['facility_list'] = FACILITY_LIST
 
         now = timezone.localtime()
+        default_production_date = None
+
         if now.hour >= 15:
             min_date = (now + timedelta(days=1)).strftime('%Y-%m-%d')
         else:
@@ -32,9 +34,11 @@ class OrderFormView(LoginRequiredMixin, TemplateView):
         is_privileged = self.request.user.is_staff or is_in_role(self.request.user, '관리자')
         if is_privileged:
             min_date = None # 관리자는 날짜 제한 없음
+            default_production_date = now.strftime('%Y-%m-%d')
 
         context['min_date'] = min_date
         context['is_privileged_user'] = is_privileged
+        context['default_production_date'] = default_production_date
         return context
 
 # 1.1. 발주 수정 화면

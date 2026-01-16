@@ -9,6 +9,9 @@ from django.views.static import serve
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+
+    # API
+    path('api/production/', include('production.api_urls')),
     
     # [화면 경로]
     path('orders/', include('orders.urls')),

@@ -57,7 +57,7 @@
             <div class="row mb-4">
                 <div class="col-md-6">
                     <label class="form-label fw-bold">생산일</label>
-                    <input type="date" id="delivery_date" class="form-control" required {% if min_date %}min="{{ min_date }}" value="{{ min_date }}"{% endif %}>
+                    <input type="date" id="delivery_date" class="form-control" required {% if min_date %}min="{{ min_date }}"{% endif %} value="{% if default_production_date %}{{ default_production_date }}{% else %}{{ min_date }}{% endif %}">
                 </div>
             </div>
 
